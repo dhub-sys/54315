@@ -13,7 +13,7 @@ final class TW_OTP {
     const TOKEN_TTL_MINUTES = 60;
     /** «Οι εγγυήσεις μου» sign-in duration choices (Ρυθμίσεις → Ασφάλεια); the customer can renew it. */
     const SESSION_CHOICES = [10, 15, 30, 60, 120];
-    const MAX_SENDS_PER_HOUR_EMAIL = 8; // short-lived codes mean a few more "send a new code"
+    const MAX_SENDS_PER_HOUR_EMAIL = 30; // demo edition: sales staff repeat demos with their own email // short-lived codes mean a few more "send a new code"
 
     /** How long an emailed code is valid (Settings → Ασφάλεια, default 2 minutes). */
     public static function ttl_minutes() {
@@ -73,7 +73,7 @@ final class TW_OTP {
         ));
         return $exp ? max(0, strtotime($exp) - current_time('timestamp')) : 0;
     }
-    const MAX_SENDS_PER_HOUR_IP = 20;
+    const MAX_SENDS_PER_HOUR_IP = 120; // demo edition: several demos from the same office/expo network
 
     public static function hash($value) {
         return hash_hmac('sha256', (string) $value, wp_salt('auth') . 'tw_otp');

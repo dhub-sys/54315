@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Warranty Manager
- * Description: Warranty Manager – αυτόνομη πλατφόρμα (standalone app) ηλεκτρονικής ενεργοποίησης και διαχείριση εγγυήσεων με σειριακούς αριθμούς: εγγραφή με επαλήθευση email, πύλη πελάτη, ειδοποιήσεις Service/λήξης μέσω email και SMS, διαχειριστικό με μαζική εισαγωγή από Excel/CSV και καταγραφή συγκαταθέσεων (GDPR).
- * Version: 1.34.0
+ * Plugin Name: Warranty Manager – Demo
+ * Description: ΕΚΔΟΣΗ ΕΠΙΔΕΙΞΗΣ για πωλητές: ο σειριακός συμπληρώνεται αυτόματα από λίστα 10 δοκιμαστικών σειριακών και κάθε καταχώρηση διαγράφεται 5 λεπτά μετά την ολοκλήρωση, ώστε ο σειριακός να είναι ξανά διαθέσιμος. Μόνο για ιδιωτική εγκατάσταση επίδειξης. Warranty Manager – αυτόνομη πλατφόρμα (standalone app) ηλεκτρονικής ενεργοποίησης και διαχείριση εγγυήσεων με σειριακούς αριθμούς: εγγραφή με επαλήθευση email, πύλη πελάτη, ειδοποιήσεις Service/λήξης μέσω email και SMS, διαχειριστικό με μαζική εισαγωγή από Excel/CSV και καταγραφή συγκαταθέσεων (GDPR).
+ * Version: 0.0.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Plugin URI: https://www.dazzlink.gr
@@ -12,7 +12,17 @@
  */
 if (!defined('ABSPATH')) exit;
 
-define('TW_VERSION', '1.34.0');
+// The demo edition and the full plugin use the same classes: never both on one site.
+if (defined('TW_VERSION') || class_exists('TW_DB')) {
+    add_action('admin_notices', function () {
+        echo '<div class="notice notice-error"><p><strong>Warranty Manager – Demo:</strong> υπάρχει ήδη ενεργό το κανονικό Warranty Manager σε αυτό το site. Η έκδοση επίδειξης εγκαθίσταται μόνο σε ξεχωριστή, ιδιωτική εγκατάσταση.</p></div>';
+    });
+    return;
+}
+
+define('TW_VERSION', '0.0.0');
+/** Demo edition: auto-assigned serials, every activation deleted after TW_Demo::RESET_MINUTES. */
+define('TW_DEMO', true);
 define('TW_FILE', __FILE__);
 define('TW_DIR', plugin_dir_path(__FILE__));
 define('TW_URL', plugin_dir_url(__FILE__));
@@ -42,11 +52,13 @@ require_once TW_DIR . 'includes/class-tw-admin.php';
 require_once TW_DIR . 'includes/class-tw-activity.php';
 require_once TW_DIR . 'includes/class-tw-staff-auth.php';
 require_once TW_DIR . 'includes/class-tw-app.php';
+require_once TW_DIR . 'includes/class-tw-demo.php';
 
 register_activation_hook(__FILE__, ['TW_DB', 'activate']);
 register_deactivation_hook(__FILE__, function () {
     TW_Cron::unschedule();
     TW_Backup::unschedule();
+    wp_unschedule_hook(TW_Demo::HOOK);
 });
 
 add_action('plugins_loaded', function () {
@@ -61,6 +73,7 @@ add_action('plugins_loaded', function () {
     TW_Brevo::init();
     TW_Backup::init();
     TW_Backup_Remote::init();
+    TW_Demo::init();
     if (is_admin()) {
         TW_Admin::init();
         TW_Access::init();

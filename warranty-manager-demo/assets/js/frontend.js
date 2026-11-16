@@ -202,7 +202,49 @@
             root.querySelectorAll('form').forEach(function (f) { f.reset(); });
             tsReset(f1);
             alertBox(root, '');
+            stopDemoTimer();
             show(1);
+            demoSerial();
+        }
+
+        // Demo edition: the serial comes from the demo pool (held for this browser until the demo ends).
+        var demoInfo = f1.querySelector('[data-demo-info]'), demoRetry = null, demoTimer = null;
+        function demoSerial() {
+            clearTimeout(demoRetry);
+            f1.serial.value = '';
+            if (demoInfo) demoInfo.textContent = T('Λήψη σειριακού…');
+            post('demo_serial', {}).then(function (r) {
+                var st = r.data && r.data.stats;
+                if (!r.success) {
+                    if (demoInfo) demoInfo.textContent = '';
+                    alertBox(root, r.data.message, 'info');
+                    demoRetry = setTimeout(demoSerial, ((r.data && r.data.retry) || 30) * 1000);
+                    return;
+                }
+                alertBox(root, '');
+                f1.serial.value = r.data.serial;
+                if (demoInfo) {
+                    demoInfo.textContent = T('Προϊόν:') + ' ' + (r.data.product || '—') +
+                        (st ? ' · ' + T('Ελεύθεροι σειριακοί επίδειξης:') + ' ' + st.free + '/' + st.total : '');
+                }
+            });
+        }
+        function stopDemoTimer() { clearInterval(demoTimer); demoTimer = null; }
+        function demoCountdown(sec) {
+            var box = root.querySelector('[data-demo-reset]');
+            stopDemoTimer();
+            if (!box || !(sec >= 0)) return;
+            var end = Date.now() + sec * 1000;
+            function tick() {
+                var l = Math.max(0, Math.round((end - Date.now()) / 1000));
+                box.textContent = l > 0
+                    ? T('Έκδοση επίδειξης: η καταχώρηση θα διαγραφεί αυτόματα σε') + ' ' + Math.floor(l / 60) + ':' + ('0' + (l % 60)).slice(-2) + ' ' + T('και ο σειριακός θα είναι ξανά διαθέσιμος για νέα επίδειξη.')
+                    : T('Έκδοση επίδειξης: ο χρόνος της καταχώρησης έληξε. Τα στοιχεία διαγράφονται και ο σειριακός είναι ξανά διαθέσιμος.');
+                if (l === 0) stopDemoTimer();
+            }
+            box.hidden = false;
+            tick();
+            demoTimer = setInterval(tick, 1000);
         }
 
         function productLine(el, prefix) {
@@ -225,7 +267,12 @@
             post('reg_check', extend({ serial: serial }, g)).then(function (r) {
                 busy(f1, false);
                 tsReset(f1);
-                if (!r.success) { alertBox(root, r.data.message); markField(f1, r.data.field); return; }
+                if (!r.success) {
+                    alertBox(root, r.data.message);
+                    markField(f1, r.data.field);
+                    if (r.data.field === 'restart') setTimeout(demoSerial, 3000); // demo: that serial went to another demo
+                    return;
+                }
                 state.serial = r.data.serial;
                 state.product = r.data.product;
                 state.pass = r.data.pass;
@@ -408,7 +455,7 @@
                 if (!r.success) {
                     alertBox(root, r.data.message);
                     markF4(r.data.field);
-                    if (r.data.field === 'token' || r.data.field === 'serial') {
+                    if (r.data.field === 'token' || r.data.field === 'serial' || r.data.field === 'restart') {
                         setTimeout(restart, 4000);
                     }
                     return;
@@ -417,6 +464,7 @@
                 state.done = r.data;
                 bind(root.querySelector('[data-step="6"]'), r.data);
                 show(6);
+                demoCountdown(r.data.demo_reset_in);
                 root.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
@@ -430,6 +478,7 @@
                 show(4);
             }
         } catch (e4) {}
+        if (!state.token) demoSerial();
     }
 
     // ------------------------------------------------------------ portal

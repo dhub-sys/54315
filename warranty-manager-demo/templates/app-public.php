@@ -25,8 +25,10 @@ $here = TW_App::public_url($screen === 'my' ? 'my' : '');
     <link rel="stylesheet" href="<?php echo esc_url(TW_App::asset('assets/css/frontend.css')); ?>">
     <link rel="stylesheet" href="<?php echo esc_url(TW_App::asset('assets/css/app-public.css')); ?>">
     <?php echo TW_App::brand_style(); // phpcs:ignore ?>
+    <?php echo TW_Demo::ribbon_css(); // phpcs:ignore ?>
 </head>
 <body class="tw-public tw-public--<?php echo esc_attr($screen); ?>">
+<?php echo TW_Demo::ribbon('public'); // phpcs:ignore ?>
 <header class="tw-pub-head">
     <div class="tw-pub-inner">
         <a class="tw-pub-brand" href="<?php echo esc_url(TW_I18n::url(home_url('/'))); ?>"><?php echo TW_App::logo_html('tw-pub-logo'); // phpcs:ignore ?></a>

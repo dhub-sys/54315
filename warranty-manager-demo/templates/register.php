@@ -24,12 +24,13 @@ $tw_sess = TW_Frontend::session();
     <form class="tw-step" data-step="1" novalidate>
         <?php echo TW_Guard::fields(); // phpcs:ignore ?>
         <h3><?php tw_e('Ενεργοποίηση εγγύησης'); ?></h3>
-        <p><?php tw_e('Πληκτρολογήστε τον σειριακό αριθμό, όπως αναγράφεται στην ετικέτα του προϊόντος.'); ?></p>
+        <p><?php tw_e('Έκδοση επίδειξης: ο σειριακός αριθμός συμπληρώνεται αυτόματα από τη λίστα σειριακών επίδειξης. Συνεχίστε με τα υπόλοιπα βήματα όπως ο πελάτης.'); ?></p>
         <?php if ($tw_sess) : ?><p class="tw-alert tw-alert--success tw-signed-hint"><?php echo esc_html(sprintf(tw__('Είστε συνδεδεμένος/η ως %s: μετά τον σειριακό αριθμό συνεχίζετε κατευθείαν στα στοιχεία σας, χωρίς νέο κωδικό.'), $tw_sess->email)); ?></p><?php endif; ?>
         <div class="tw-field">
             <label for="tw-serial"><?php tw_e('Σειριακός αριθμός (S/N)'); ?> <span class="tw-req">*</span></label>
-            <input id="tw-serial" name="serial" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="64">
+            <input id="tw-serial" name="serial" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="64" readonly class="tw-readonly" placeholder="<?php echo esc_attr(tw__('Λήψη σειριακού…')); ?>">
         </div>
+        <p class="tw-demo-serial-info" data-demo-info aria-live="polite"></p>
         <?php echo TW_Guard::widget('public', 'register_start'); // phpcs:ignore ?>
         <button type="submit" class="tw-btn"><?php tw_e('Συνέχεια'); ?></button>
     </form>
@@ -180,6 +181,7 @@ $tw_sess = TW_Frontend::session();
             <dt><?php tw_e('Επόμενο Service'); ?></dt><dd data-bind="next_service"></dd>
         </dl>
         <p><?php tw_e('Στείλαμε επιβεβαίωση στο'); ?> <strong data-bind="email"></strong>.</p>
+        <p class="tw-alert tw-alert--info tw-no-print" data-demo-reset hidden></p>
         <p class="tw-done-actions"><button type="button" class="tw-btn" data-action="print-card">🖨 <?php tw_e('Εκτύπωση κάρτας εγγύησης'); ?></button>
            <a class="tw-btn tw-btn--ghost" data-bind-href="portal_url" hidden><?php tw_e('Μετάβαση στις εγγυήσεις μου'); ?></a>
            <button type="button" class="tw-link" data-action="restart"><?php tw_e('Ενεργοποίηση άλλου προϊόντος'); ?></button></p>

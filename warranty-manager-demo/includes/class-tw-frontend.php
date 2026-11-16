@@ -103,6 +103,10 @@ final class TW_Frontend {
         if ($row->status !== 'available') {
             self::fail('Για αυτόν τον σειριακό αριθμό έχει ήδη ενεργοποιηθεί εγγύηση. Αν είναι δική σας, συνδεθείτε στην πύλη εγγυήσεων.', 'serial');
         }
+        // Demo edition: a serial given to another demo in progress can't be used here.
+        if (TW_Demo::held_by_other($row->id)) {
+            self::fail('Ο σειριακός αριθμός χρησιμοποιείται σε άλλη επίδειξη που βρίσκεται σε εξέλιξη. Ξεκινήστε ξανά για να πάρετε νέο σειριακό.', 'restart', 409);
+        }
         return $row;
     }
 
@@ -121,7 +125,7 @@ final class TW_Frontend {
      */
     public static function ajax_reg_check() {
         self::guard(true);
-        if (!TW_Guard::throttle('serial_check', 30, HOUR_IN_SECONDS)) {
+        if (!TW_Guard::throttle('serial_check', 300, HOUR_IN_SECONDS)) {
             self::fail('Πάρα πολλές αναζητήσεις σειριακών αριθμών. Δοκιμάστε ξανά σε λίγο.', '', 429);
         }
         $serial = self::usable_serial(self::input('serial'));
@@ -179,6 +183,7 @@ final class TW_Frontend {
         if (!$otp) self::fail('Η επαλήθευση έληξε. Ξεκινήστε ξανά από τον σειριακό αριθμό.', 'token', 401);
         $serial = TW_Warranty::serial_by_id($otp->serial_id);
         if (!$serial || $serial->status !== 'available') self::fail('Ο σειριακός αριθμός έχει ήδη καταχωρηθεί.', 'serial', 409);
+        if (TW_Demo::held_by_other($serial->id)) self::fail('Ο σειριακός αριθμός χρησιμοποιείται σε άλλη επίδειξη που βρίσκεται σε εξέλιξη. Ξεκινήστε ξανά για να πάρετε νέο σειριακό.', 'serial', 409);
 
         // ---- validation (server side is authoritative; the browser checks are only for convenience)
         $name = sanitize_text_field(self::input('customer_name'));
@@ -297,6 +302,8 @@ final class TW_Frontend {
             'next_service' => $next ? TW_Util::date_label($next['due']) : '',
             'email' => TW_Util::mask_email($w->email),
             'portal_url' => TW_Settings::page_url('portal'),
+            // Demo edition: seconds until this registration is deleted and the serial is free again.
+            'demo_reset_in' => TW_Demo::seconds_left($w),
         ]);
     }
 

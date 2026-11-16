@@ -19,7 +19,7 @@ final class TW_Admin {
     public static function actions() {
         return ['import', 'add_serial', 'serial_status', 'serial_batch', 'record_service', 'delete_service', 'set_status', 'invoice', 'export',
             'save_settings', 'run_now', 'resend_activation', 'anonymize', 'test_message', 'terms_view', 'team_add', 'team_remove', 'process_erasure', 'template', 'review_service', 'receipt', 'brevo_tool', 'backup_create', 'backup_download', 'backup_delete', 'backup_restore', 'backup_settings',
-            'backup_send', 'remote_settings', 'remote_connect', 'remote_disconnect', 'remote_test', 'edit_customer', 'log_export', 'log_verify', 'log_archive', 'log_archive_settings', 'partner_save', 'partner_delete', 'partner_import', 'partner_export', 'terms_save', 'terms_assign', 'terms_delete', 'terms_pdf_draft', 'claim_update', 'claim_file'];
+            'backup_send', 'remote_settings', 'remote_connect', 'remote_disconnect', 'remote_test', 'edit_customer', 'log_export', 'log_verify', 'log_archive', 'log_archive_settings', 'partner_save', 'partner_delete', 'partner_import', 'partner_export', 'terms_save', 'terms_assign', 'terms_delete', 'terms_pdf_draft', 'claim_update', 'claim_file', 'demo_reset'];
     }
 
     /** Screens of the admin app: key => [label, dashicon-like glyph, callback]. */
@@ -233,7 +233,7 @@ final class TW_Admin {
             'service_submitted' => 'Υποβολή Service από τον πελάτη', 'service_recorded' => 'Καταχώρηση Service από την εταιρεία', 'service_approved' => 'Service: ελέγχθηκε',
             'service_rejected' => 'Service: απορρίφθηκε', 'service_deleted' => 'Διαγραφή καταχώρησης Service', 'receipt_downloaded' => 'Προβολή απόδειξης Service',
             'invoice_downloaded' => 'Προβολή παραστατικού αγοράς', 'card_printed' => 'Εκτύπωση καρτέλας', 'staff_login' => 'Σύνδεση στο διαχειριστικό', 'locked' => 'Οριστικό κλείδωμα', 'status_active' => 'Κατάσταση: Ενεργή', 'status_expired' => 'Κατάσταση: Έληξε',
-            'status_void' => 'Κατάσταση: Ακυρωμένη', 'status_locked' => 'Κατάσταση: Κλειδωμένη', 'customer_corrected' => 'Διόρθωση στοιχείων πελάτη', 'anonymized' => 'Ανωνυμοποίηση στοιχείων',
+            'status_void' => 'Κατάσταση: Ακυρωμένη', 'status_locked' => 'Κατάσταση: Κλειδωμένη', 'customer_corrected' => 'Διόρθωση στοιχείων πελάτη', 'anonymized' => 'Ανωνυμοποίηση στοιχείων', 'demo_reset' => 'Επαναφορά επίδειξης (διαγραφή καταχώρησης)',
             'email_undeliverable' => 'Το email δεν παραδόθηκε', 'sms_undeliverable' => 'Το SMS δεν παραδόθηκε', 'fallback_sent' => 'Αποστολή από εναλλακτικό κανάλι',
             'warranty_viewed' => 'Προβολή καρτέλας από την ομάδα', 'language_changed' => 'Αλλαγή γλώσσας επικοινωνίας',
             'erasure_requested' => 'Αίτημα διαγραφής από τον πελάτη', 'erasure_processed' => 'Εκτέλεση αιτήματος διαγραφής',
@@ -349,6 +349,7 @@ final class TW_Admin {
         <div class="wrap tw-wrap">
             <h1>Εγγυήσεις – Επισκόπηση</h1>
             <?php self::notice(); ?>
+            <?php TW_Demo::admin_panel(); ?>
             <form method="get" class="tw-filters tw-lookup">
                 <?php self::get_form_fields('warranties'); ?>
                 <label for="tw-lookup"><strong>Αναζήτηση εγγύησης</strong></label>
@@ -2253,6 +2254,14 @@ final class TW_Admin {
         header('Content-Length: ' . filesize($path));
         readfile($path);
         exit;
+    }
+
+    /** Demo edition: delete every demo registration now and free all serials. */
+    public static function handle_demo_reset() {
+        self::guard('tw_demo_reset');
+        $n = TW_Demo::reset_all();
+        self::flash($n ? sprintf('Διαγράφηκαν %d καταχωρήσεις επίδειξης· όλοι οι σειριακοί είναι διαθέσιμοι.', $n) : 'Δεν υπήρχαν καταχωρήσεις· όλοι οι σειριακοί είναι διαθέσιμοι.');
+        self::back('tw-dashboard');
     }
 
     public static function handle_run_now() {

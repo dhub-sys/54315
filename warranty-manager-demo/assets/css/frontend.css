@@ -295,3 +295,8 @@
 @media print { .tw-session-pill { display: none !important; } }
 .tw-portal-new { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 18px; }
 .tw-portal-new a.tw-btn { text-decoration: none; }
+
+/* Demo edition */
+.tw-demo-serial-info { font-size: 13px; margin: -4px 0 12px; opacity: .85; }
+.tw-demo-serial-info:empty { display: none; }
+@media print { .tw-demo-ribbon, [data-demo-reset] { display: none !important; } }

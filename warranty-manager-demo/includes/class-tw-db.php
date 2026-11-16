@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) exit;
  * events         – audit trail per warranty / serial
  */
 final class TW_DB {
-    const DB_VERSION = '1.17.0';
+    const DB_VERSION = '1.17.0-demo1';
     const DB_VERSION_OPTION = 'tw_db_version';
 
     public static function table($name) {
@@ -294,6 +294,9 @@ final class TW_DB {
   KEY action (action),
   KEY actor (actor)
 ) $c;");
+
+        // Demo edition: held serials + the demo serial pool.
+        TW_Demo::install();
 
         update_option(self::DB_VERSION_OPTION, self::DB_VERSION);
     }

@@ -19,6 +19,7 @@ $tw_badge = function ($n) { return $n ? '<sup class="tw-nav-badge" title="' . es
     <link rel="stylesheet" href="<?php echo esc_url(TW_App::asset('assets/css/fonts.css')); ?>">
     <link rel="stylesheet" href="<?php echo esc_url(TW_App::asset('assets/css/app-admin.css')); ?>">
     <?php echo TW_App::brand_style(); // phpcs:ignore ?>
+    <?php echo TW_Demo::ribbon_css(); // phpcs:ignore ?>
 </head>
 <body class="tw-console tw-screen-<?php echo esc_attr($screen); ?>">
 <header class="tw-appbar">
@@ -87,6 +88,7 @@ $tw_badge = function ($n) { return $n ? '<sup class="tw-nav-badge" title="' . es
 </aside>
 <div class="tw-backdrop" hidden></div>
 <main class="tw-main">
+    <?php echo TW_Demo::ribbon('admin'); // phpcs:ignore ?>
     <?php
     // Each screen's title gets the same icon as its menu item.
     echo preg_replace('/<h1([^>]*)>/', '<h1$1><span class="tw-title-ico">' . TW_Admin::icon($screens[$screen][1]) . '</span>', $tw_page, 1); // phpcs:ignore
