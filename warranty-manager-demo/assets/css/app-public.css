@@ -1,0 +1,41 @@
+/* Thermic Warranty – standalone customer pages (theme independent). */
+:root { --tw-brand: #c8102e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body.tw-public {
+    font: 16px/1.55 'Geom', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1d2330; background: #f4f6f8; min-height: 100vh; display: flex; flex-direction: column;
+}
+.tw-pub-inner { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.tw-pub-head { background: #fff; border-bottom: 3px solid var(--tw-brand); }
+.tw-pub-head .tw-pub-inner { min-height: 68px; }
+.tw-pub-brand { text-decoration: none; display: flex; align-items: center; }
+.tw-pub-logo { max-height: 44px; max-width: 180px; display: block; }
+.tw-pub-logo--text { color: #1d2330; font-weight: 700; font-size: 22px; }
+.tw-pub-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.tw-pub-nav a { text-decoration: none; color: #4b5563; padding: 8px 14px; border-radius: 8px; font-weight: 500; font-size: 15px; }
+.tw-pub-nav a:hover { background: #f1f3f6; color: #1d2330; }
+.tw-pub-nav a.is-active { background: var(--tw-brand); color: #fff; }
+.tw-pub-main { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 32px 16px 56px; }
+.tw-pub-foot { background: #fff; border-top: 1px solid #e3e6ea; font-size: 13px; color: #5f6b7a; }
+.tw-pub-foot .tw-pub-inner { padding-top: 16px; padding-bottom: 16px; }
+.tw-pub-foot a { color: #5f6b7a; }
+@media (max-width: 600px) {
+    .tw-pub-head .tw-pub-inner { padding-top: 10px; padding-bottom: 10px; }
+    .tw-pub-nav { width: 100%; }
+    .tw-pub-nav a { flex: 1; text-align: center; padding: 8px 6px; font-size: 14px; }
+    .tw-pub-main { padding: 16px 10px 40px; }
+    .tw-pub-foot .tw-pub-inner { flex-direction: column; align-items: flex-start; gap: 4px; }
+}
+
+button, input, select, textarea { font-family: inherit; }
+
+/* Secondary colour: footer; primary colour text stays readable */
+.tw-pub-nav a.is-active { color: var(--tw-brand-ink, #fff); }
+.tw-pub-foot { background: var(--tw-side, #0f1320); color: var(--tw-side-ink, rgba(255,255,255,.72)); border-top: 0; }
+.tw-pub-foot a { color: var(--tw-side-strong, #fff); }
+
+/* 1.23 – EL | EN switch on the standalone customer pages */
+.tw-lang-switch { display: inline-flex; gap: 2px; margin-left: 10px; padding: 2px; border: 1px solid rgba(0,0,0,.12); border-radius: 999px; }
+.tw-lang-switch a { padding: 4px 10px !important; border-radius: 999px; font-size: 13px; font-weight: 600; text-decoration: none; }
+.tw-lang-switch a.is-active { background: var(--tw-accent, #c8102e); color: var(--tw-accent-ink, #fff) !important; }
