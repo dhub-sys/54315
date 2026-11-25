@@ -1,0 +1,222 @@
+<?php
+/** @var string $screen  @var array $screens  @var array $s */
+if (!defined('ABSPATH')) exit;
+$user = wp_get_current_user();
+// The screen is rendered first, so the menu counts already reflect what it marked as read (e.g. a claim opened now).
+ob_start();
+call_user_func(['TWD_Admin', $screens[$screen][2]]);
+$tw_page = ob_get_clean();
+$tw_badges = TWD_Admin::badges();
+$tw_badge = function ($n) { return $n ? '<sup class="tw-nav-badge" title="' . esc_attr($n . ' μη αναγνωσμένα') . '">' . (int) $n . '</sup>' : ''; };
+?><!doctype html>
+<html lang="el">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title><?php echo esc_html($screens[$screen][0] . ' – ' . TWD_App::APP_NAME . ' · ' . $s['company_name']); ?></title>
+    <?php echo TWD_App::favicon_tag(); // phpcs:ignore ?>
+    <link rel="stylesheet" href="<?php echo esc_url(TWD_App::asset('assets/css/fonts.css')); ?>">
+    <link rel="stylesheet" href="<?php echo esc_url(TWD_App::asset('assets/css/app-admin.css')); ?>">
+    <?php echo TWD_App::brand_style(); // phpcs:ignore ?>
+</head>
+<body class="tw-console tw-screen-<?php echo esc_attr($screen); ?>">
+<header class="tw-appbar">
+    <button type="button" class="tw-menu-toggle" aria-controls="tw-sidebar" aria-expanded="false" aria-label="Μενού"><?php echo TWD_Admin::icon('menu'); // phpcs:ignore ?></button>
+    <span class="tw-appbar-title"><?php echo esc_html($screens[$screen][0]); ?></span>
+</header>
+<aside class="tw-sidebar" id="tw-sidebar">
+    <div class="tw-brand">
+        <?php echo TWD_App::logo_html('tw-brand-logo'); // phpcs:ignore ?>
+        <span class="tw-brand-sub"><?php echo esc_html(TWD_App::APP_NAME); ?></span>
+    </div>
+    <nav class="tw-nav" aria-label="Κύριο μενού">
+        <?php foreach (TWD_Admin::nav() as $tw_n) :
+            if (isset($tw_n['key'])) :
+                $key = $tw_n['key']; $def = $screens[$key]; ?>
+            <a href="<?php echo esc_url(TWD_App::admin_url($key)); ?>" class="<?php echo $key === $screen ? 'is-active' : ''; ?>"<?php echo $key === $screen ? ' aria-current="page"' : ''; ?>>
+                <?php echo TWD_Admin::icon($def[1]); // phpcs:ignore ?><span><?php echo esc_html($def[0]); ?></span><?php echo $tw_badge($tw_badges[$key] ?? 0); // phpcs:ignore ?>
+            </a>
+            <?php else :
+                $tw_open = in_array($screen, $tw_n['items'], true);
+                $tw_sum = 0; foreach ($tw_n['items'] as $k) $tw_sum += $tw_badges[$k] ?? 0; ?>
+            <div class="tw-nav-group<?php echo $tw_open ? ' is-open has-active' : ''; ?>">
+                <button type="button" class="tw-nav-head" aria-expanded="<?php echo $tw_open ? 'true' : 'false'; ?>" aria-controls="tw-nav-<?php echo esc_attr($tw_n['group']); ?>">
+                    <?php echo TWD_Admin::icon($tw_n['icon']); // phpcs:ignore ?><span><?php echo esc_html($tw_n['label']); ?></span><?php echo $tw_badge($tw_sum); // phpcs:ignore ?>
+                    <?php echo TWD_Admin::icon('chevron'); // phpcs:ignore ?>
+                </button>
+                <div class="tw-nav-sub" id="tw-nav-<?php echo esc_attr($tw_n['group']); ?>"<?php echo $tw_open ? '' : ' hidden'; ?>>
+                    <?php foreach ($tw_n['items'] as $key) : $def = $screens[$key]; ?>
+                        <a href="<?php echo esc_url(TWD_App::admin_url($key)); ?>" class="<?php echo $key === $screen ? 'is-active' : ''; ?>"<?php echo $key === $screen ? ' aria-current="page"' : ''; ?>>
+                            <?php echo TWD_Admin::icon($def[1]); // phpcs:ignore ?><span><?php echo esc_html($def[0]); ?></span><?php echo $tw_badge($tw_badges[$key] ?? 0); // phpcs:ignore ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </nav>
+    <div class="tw-sidebar-foot">
+        <?php
+        $tw_exp = TWD_Staff_Auth::session_expires();
+        $tw_parts = preg_split('/\s+/u', trim($user->display_name ?: $user->user_email));
+        $tw_initials = mb_strtoupper(mb_substr($tw_parts[0], 0, 1) . (isset($tw_parts[1]) ? mb_substr($tw_parts[1], 0, 1) : ''));
+        ?>
+        <div class="tw-account">
+            <div class="tw-account-panel" id="tw-account-panel" hidden>
+                <div class="tw-account-email" title="<?php echo esc_attr($user->user_email); ?>"><?php echo esc_html($user->user_email); ?></div>
+                <a href="<?php echo esc_url(TWD_Staff_Auth::logout_url()); ?>" class="tw-logout"><?php echo TWD_Admin::icon('logout'); // phpcs:ignore ?><span>Αποσύνδεση</span></a>
+                <div class="tw-credit">
+                    <a href="<?php echo esc_url(TWD_App::admin_url('changelog')); ?>" class="tw-credit-ver">Έκδοση <?php echo esc_html(TWD_VERSION); ?></a>
+                    <span>Developed by <a href="https://www.dazzlink.gr" target="_blank" rel="noopener">Dazzlink</a></span>
+                </div>
+            </div>
+            <div class="tw-account-bar<?php echo $tw_exp ? ' tw-session' : ''; ?>"<?php if ($tw_exp) : ?> data-expires="<?php echo (int) $tw_exp; ?>" data-now="<?php echo (int) time(); ?>" data-nonce="<?php echo esc_attr(wp_create_nonce('twd_session_refresh')); ?>" data-url="<?php echo esc_url(TWD_App::admin_url()); ?>"<?php endif; ?>>
+                <button type="button" class="tw-account-toggle" aria-expanded="false" aria-controls="tw-account-panel" title="Λογαριασμός">
+                    <span class="tw-avatar" aria-hidden="true"><?php echo esc_html($tw_initials); ?></span>
+                    <span class="tw-account-text">
+                        <strong><?php echo esc_html($user->display_name ?: $user->user_email); ?></strong>
+                        <?php if ($tw_exp) : ?><span class="tw-account-session"><?php echo TWD_Admin::icon('clock'); // phpcs:ignore ?><span class="tw-session-text">Λήγει σε <strong class="tw-session-left">–</strong></span></span><?php endif; ?>
+                    </span>
+                    <svg class="tw-account-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+                </button>
+                <?php if ($tw_exp) : ?><button type="button" class="tw-session-refresh" title="Ανανέωση σύνδεσης" aria-label="Ανανέωση σύνδεσης"><?php echo TWD_Admin::icon('refresh'); // phpcs:ignore ?></button><?php endif; ?>
+            </div>
+        </div>
+    </div>
+</aside>
+<div class="tw-backdrop" hidden></div>
+<main class="tw-main">
+    <?php
+    // Each screen's title gets the same icon as its menu item.
+    echo preg_replace('/<h1([^>]*)>/', '<h1$1><span class="tw-title-ico">' . TWD_Admin::icon($screens[$screen][1]) . '</span>', $tw_page, 1); // phpcs:ignore
+    ?>
+</main>
+<script>
+(function () {
+    var b = document.querySelector('.tw-menu-toggle'), bd = document.querySelector('.tw-backdrop');
+    function set(open) { document.body.classList.toggle('tw-nav-open', open); b.setAttribute('aria-expanded', open ? 'true' : 'false'); bd.hidden = !open; }
+    b.addEventListener('click', function () { set(!document.body.classList.contains('tw-nav-open')); });
+    bd.addEventListener('click', function () { set(false); });
+    // Account panel (email, sign out, version) opens upwards from the account bar; the choice is remembered.
+    (function () {
+        var t = document.querySelector('.tw-account-toggle'), panel = document.getElementById('tw-account-panel'); if (!t || !panel) return;
+        function open(on, save) {
+            panel.hidden = !on; t.setAttribute('aria-expanded', on ? 'true' : 'false'); t.closest('.tw-account').classList.toggle('is-open', on);
+            if (save) { try { localStorage.setItem('twd_account_open', on ? '1' : '0'); } catch (e) {} }
+            fade();
+        }
+        try { if (localStorage.getItem('twd_account_open') === '1') open(true, false); } catch (e) {}
+        t.addEventListener('click', function () { open(panel.hidden, true); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !panel.hidden) { open(false, true); t.focus(); } });
+    })();
+    // Menu groups open on click (the group of the current screen starts open).
+    document.querySelectorAll('.tw-nav-head').forEach(function (h) {
+        h.addEventListener('click', function () {
+            var g = h.parentNode, sub = g.querySelector('.tw-nav-sub'), open = sub.hidden;
+            sub.hidden = !open; g.classList.toggle('is-open', open); h.setAttribute('aria-expanded', open ? 'true' : 'false');
+            fade();
+        });
+    });
+    // Menu: a soft fade at the top/bottom edge when there are more items to scroll to.
+    function fade() {
+        var n = document.querySelector('.tw-nav'); if (!n) return;
+        n.classList.toggle('fade-top', n.scrollTop > 2);
+        n.classList.toggle('fade-bottom', n.scrollTop + n.clientHeight < n.scrollHeight - 2);
+    }
+    (function () {
+        var n = document.querySelector('.tw-nav'); if (!n) return;
+        n.addEventListener('scroll', fade, { passive: true }); window.addEventListener('resize', fade);
+        var a = n.querySelector('a.is-active'); if (a && a.offsetTop + a.offsetHeight > n.clientHeight) n.scrollTop = a.offsetTop - n.clientHeight / 2;
+        fade();
+    })();
+    // Session countdown with refresh (the server ends the session at the same moment).
+    (function () {
+        var box = document.querySelector('.tw-session'); if (!box) return;
+        var left = box.querySelector('.tw-session-left'), btn = box.querySelector('.tw-session-refresh');
+        var skew = Date.now() / 1000 - parseInt(box.getAttribute('data-now'), 10); // server vs. browser clock
+        var exp = parseInt(box.getAttribute('data-expires'), 10);
+        function fmt(s) {
+            if (s >= 86400) { var d = Math.floor(s / 86400); return d + (d === 1 ? ' ημέρα' : ' ημέρες'); }
+            var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+            return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+        }
+        function tick() {
+            var s = Math.max(0, Math.round(exp - (Date.now() / 1000 - skew)));
+            left.textContent = fmt(s);
+            box.classList.toggle('is-low', s <= 300);
+            if (s <= 0) { clearInterval(timer); location.href = box.getAttribute('data-url'); }
+        }
+        var timer = setInterval(tick, 1000); tick();
+        btn.addEventListener('click', function () {
+            btn.disabled = true; btn.classList.add('is-spinning');
+            var fd = new FormData(); fd.append('action', 'twd_session_refresh'); fd.append('_wpnonce', box.getAttribute('data-nonce'));
+            fetch(box.getAttribute('data-url'), { method: 'POST', body: fd, credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (r) {
+                    if (!r.success) { location.href = box.getAttribute('data-url'); return; }
+                    exp = r.data.expires; skew = 0; box.setAttribute('data-nonce', r.data.nonce); tick();
+                })
+                .catch(function () {})
+                .finally(function () { setTimeout(function () { btn.disabled = false; btn.classList.remove('is-spinning'); }, 400); });
+        });
+    })();
+
+    // File inputs: Greek, styled picker with drag & drop (replaces the browser's "Choose file").
+    var up = <?php echo wp_json_encode(TWD_Admin::icon('upload')); ?>;
+    document.querySelectorAll('input[type=file]').forEach(function (inp) {
+        var box = document.createElement('label'); box.className = 'tw-file';
+        var multi = inp.multiple, empty = multi ? 'Δεν επιλέχθηκαν αρχεία' : 'Δεν επιλέχθηκε αρχείο';
+        inp.parentNode.insertBefore(box, inp);
+        box.innerHTML = '<span class="tw-file-btn">' + up + (multi ? 'Επιλογή αρχείων' : 'Επιλογή αρχείου') + '</span><span class="tw-file-name">' + empty + ' – ή σύρετε ένα αρχείο εδώ</span>';
+        box.appendChild(inp);
+        var name = box.querySelector('.tw-file-name');
+        function show() {
+            var f = inp.files;
+            box.classList.toggle('has-file', f.length > 0);
+            name.textContent = f.length ? Array.prototype.map.call(f, function (x) { return x.name; }).join(', ') : empty + ' – ή σύρετε ένα αρχείο εδώ';
+        }
+        inp.addEventListener('change', show);
+        ['dragenter', 'dragover'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.add('is-drag'); }); });
+        ['dragleave', 'drop'].forEach(function (ev) { box.addEventListener(ev, function () { box.classList.remove('is-drag'); }); });
+        box.addEventListener('drop', function (e) { e.preventDefault(); if (e.dataTransfer.files.length) { inp.files = e.dataTransfer.files; show(); } });
+        inp.form && inp.form.addEventListener('reset', function () { setTimeout(show, 0); });
+    });
+    document.querySelectorAll('.notice.is-dismissible').forEach(function (n) {
+        var x = document.createElement('button'); x.type = 'button'; x.className = 'tw-dismiss'; x.setAttribute('aria-label', 'Κλείσιμο'); x.textContent = '×';
+        x.onclick = function () { n.remove(); }; n.appendChild(x);
+    });
+    // Tax number with country prefix: numeric keypad and hint follow the chosen country.
+    document.querySelectorAll('[data-tw-taxid]').forEach(function (box) {
+        var sel = box.querySelector('select'), inp = box.querySelector('input');
+        function label(full) { [].forEach.call(sel.options, function (o) { o.textContent = o.getAttribute(full ? 'data-full' : 'data-short'); }); }
+        function upd() { var o = sel.options[sel.selectedIndex]; inp.placeholder = o.getAttribute('data-ph') || ''; sel.title = o.getAttribute('title') || ''; if (sel.value === 'GR') inp.setAttribute('inputmode', 'numeric'); else inp.removeAttribute('inputmode'); }
+        ['focus', 'mousedown', 'touchstart', 'keydown'].forEach(function (ev) { sel.addEventListener(ev, function () { label(true); }, { passive: true }); });
+        sel.addEventListener('blur', function () { label(false); });
+        sel.addEventListener('change', function () { upd(); label(false); inp.focus(); });
+        label(false); upd();
+    });
+    // Export dialogs: choose columns and headers, then download (the page stays as it is).
+    document.querySelectorAll('[data-tw-dialog]').forEach(function (b) {
+        var dlg = document.getElementById(b.getAttribute('data-tw-dialog'));
+        if (!dlg) return;
+        b.addEventListener('click', function () { dlg.showModal ? dlg.showModal() : dlg.setAttribute('open', ''); });
+        dlg.querySelectorAll('[data-tw-close]').forEach(function (c) { c.addEventListener('click', function () { dlg.close(); }); });
+        dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+        var boxes = dlg.querySelectorAll('input[name="cols[]"]');
+        dlg.querySelectorAll('[data-tw-cols]').forEach(function (t) {
+            t.addEventListener('click', function () {
+                var m = t.getAttribute('data-tw-cols');
+                boxes.forEach(function (c) { c.checked = m !== 'none'; });
+                if (m === 'reset') dlg.querySelectorAll('input[name^="lbl["]').forEach(function (i) { i.value = ''; });
+            });
+        });
+        if (boxes.length) dlg.querySelector('form').addEventListener('submit', function (e) {
+            if (![].some.call(boxes, function (c) { return c.checked; })) { e.preventDefault(); window.alert('Επιλέξτε τουλάχιστον μία στήλη.'); return; }
+            setTimeout(function () { dlg.close(); }, 300);
+        });
+    });
+})();
+</script>
+</body>
+</html>

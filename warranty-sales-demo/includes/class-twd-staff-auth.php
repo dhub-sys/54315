@@ -1,0 +1,196 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+/**
+ * Sign-in for the standalone admin app: email + password, then (by default) a one-time
+ * code by email. Also first-time password set / reset by emailed code, and sign-out.
+ * Uses the normal WordPress auth cookie, so sessions behave like any WP login.
+ */
+final class TWD_Staff_Auth {
+    const MAX_FAILS = 10;
+    const FAIL_WINDOW = 900; // 15 minutes
+    const MIN_PASSWORD = 10;
+
+    /** @return array view state for the login template */
+    public static function handle() {
+        $action = isset($_REQUEST['action']) ? sanitize_key(wp_unslash($_REQUEST['action'])) : '';
+
+        if ($action === 'twd_logout') {
+            if (is_user_logged_in() && isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'twd_logout')) {
+                TWD_DB::log_event('staff_logout');
+                wp_logout();
+            }
+            wp_safe_redirect(TWD_App::admin_url());
+            exit;
+        }
+
+        if (is_user_logged_in() && current_user_can(TWD_Admin::cap())) {
+            return ['step' => 'login'];
+        }
+        if (is_user_logged_in() && !current_user_can(TWD_Admin::cap()) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+            return ['step' => 'login', 'error' => 'Ο λογαριασμός σας δεν έχει πρόσβαση στο διαχειριστικό εγγυήσεων.'];
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || strpos($action, 'twd_staff_') !== 0) {
+            return ['step' => isset($_GET['forgot']) ? 'forgot' : 'login'];
+        }
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'twd_staff_auth')) {
+            return ['step' => 'login', 'error' => 'Η φόρμα έληξε. Δοκιμάστε ξανά.'];
+        }
+        // Honeypot everywhere; time trap and Turnstile on the forms that start a sign-in or a password reset.
+        $guard = TWD_Guard::check('staff', in_array($action, ['twd_staff_login', 'twd_staff_forgot'], true));
+        if ($guard !== true) {
+            $back = ['twd_staff_otp' => 'otp', 'twd_staff_forgot' => 'forgot', 'twd_staff_reset' => 'reset'][$action] ?? 'login';
+            $email = isset($_POST['email']) ? strtolower(sanitize_email(wp_unslash($_POST['email']))) : '';
+            return ['step' => $back, 'email' => $email, 'error' => $guard];
+        }
+        if (self::blocked()) {
+            TWD_DB::log_event('staff_login_blocked', ['email' => isset($_POST['email']) ? strtolower(sanitize_email(wp_unslash($_POST['email']))) : ''], 0, 0, 'visitor');
+            return ['step' => 'login', 'error' => 'Πάρα πολλές αποτυχημένες προσπάθειες. Δοκιμάστε ξανά σε 15 λεπτά.'];
+        }
+
+        $email = isset($_POST['email']) ? strtolower(sanitize_email(wp_unslash($_POST['email']))) : '';
+        switch ($action) {
+            case 'twd_staff_login':
+                return self::step_password($email, isset($_POST['password']) ? (string) wp_unslash($_POST['password']) : '');
+            case 'twd_staff_otp':
+                return self::step_otp($email, isset($_POST['code']) ? (string) wp_unslash($_POST['code']) : '');
+            case 'twd_staff_forgot':
+                return self::step_forgot($email);
+            case 'twd_staff_reset':
+                return self::step_reset($email, isset($_POST['code']) ? (string) wp_unslash($_POST['code']) : '',
+                    isset($_POST['password']) ? (string) wp_unslash($_POST['password']) : '', isset($_POST['password2']) ? (string) wp_unslash($_POST['password2']) : '');
+        }
+        return ['step' => 'login'];
+    }
+
+    private static function blocked() {
+        return TWD_Guard::hits('staff_fail') >= self::MAX_FAILS;
+    }
+
+    private static function fail() {
+        TWD_Guard::hit('staff_fail', self::MAX_FAILS, self::FAIL_WINDOW); // atomic: parallel guesses are counted too
+    }
+
+    private static function team_user($email) {
+        $u = $email ? get_user_by('email', $email) : null;
+        return ($u && user_can($u, TWD_Admin::cap())) ? $u : null;
+    }
+
+    private static function send_code($user, $purpose, $subject) {
+        [, $code] = TWD_OTP::create($purpose, strtolower($user->user_email), $user->ID);
+        return TWD_Messenger::send_email($user->user_email, $subject,
+            sprintf("Γεια σας %s,\n\nο κωδικός σας για το διαχειριστικό εγγυήσεων είναι:\n\n%s\n\nΙσχύει για %d λεπτά. Αν δεν τον ζητήσατε εσείς, αγνοήστε το μήνυμα και ενημερώστε τον υπεύθυνο.",
+                $user->display_name, $code, TWD_OTP::ttl_minutes()));
+    }
+
+    const SESSION_CHOICES = [15, 30, 60, 120, 240, 480, 720, 1440];
+
+    public static function session_minutes() {
+        $m = (int) TWD_Settings::get('staff_session_minutes');
+        return in_array($m, self::SESSION_CHOICES, true) ? $m : 120;
+    }
+
+    /**
+     * Issues the WordPress auth cookie with this platform's session length. WordPress stores the
+     * expiry with the session token, so the server ends the session even if the page stays open.
+     * @return int expiry timestamp
+     */
+    public static function issue_cookie($user_id) {
+        $len = self::session_minutes() * MINUTE_IN_SECONDS;
+        $f = function () use ($len) { return $len; };
+        // Keep $_COOKIE in step so nonces made later in this request use the new session token.
+        $c = function ($cookie) { $_COOKIE[LOGGED_IN_COOKIE] = $cookie; };
+        add_filter('auth_cookie_expiration', $f, 999);
+        add_action('set_logged_in_cookie', $c, 10, 1);
+        wp_set_auth_cookie($user_id, true, is_ssl());
+        remove_filter('auth_cookie_expiration', $f, 999);
+        remove_action('set_logged_in_cookie', $c, 10);
+        return time() + $len;
+    }
+
+    /** Expiry of the current sign-in (from the logged-in cookie). */
+    public static function session_expires() {
+        $p = wp_parse_auth_cookie('', 'logged_in');
+        return $p && !empty($p['expiration']) ? (int) $p['expiration'] : 0;
+    }
+
+    /** Starts a fresh session of the configured length and ends the current one. @return array */
+    public static function refresh() {
+        $user = wp_get_current_user();
+        $old = wp_get_session_token();
+        $exp = self::issue_cookie($user->ID);
+        if ($old) WP_Session_Tokens::get_instance($user->ID)->destroy($old);
+        return ['expires' => $exp, 'nonce' => wp_create_nonce('twd_session_refresh')];
+    }
+
+    private static function sign_in($user) {
+        wp_set_current_user($user->ID);
+        self::issue_cookie($user->ID);
+        update_user_meta($user->ID, 'twd_last_login', TWD_DB::now());
+        TWD_Guard::reset('staff_fail');
+        TWD_DB::log_event('staff_login', ['ip' => TWD_Util::client_ip()], 0, 0, 'admin:' . $user->user_login);
+        wp_safe_redirect(TWD_App::admin_url());
+        exit;
+    }
+
+    private static function step_password($email, $password) {
+        $user = self::team_user($email);
+        $auth = $user ? wp_authenticate($user->user_login, $password) : null;
+        if (!$user || is_wp_error($auth)) {
+            self::fail();
+            TWD_DB::log_event('staff_login_failed', ['email' => $email, 'reason' => $user ? 'λάθος κωδικός πρόσβασης' : 'άγνωστο email'], 0, 0, 'visitor');
+            return ['step' => 'login', 'email' => $email, 'error' => 'Λάθος email ή κωδικός πρόσβασης.'];
+        }
+        if (!TWD_Settings::get('staff_2fa')) self::sign_in($auth);
+        $rl = TWD_OTP::rate_limit_ok(strtolower($user->user_email));
+        if (is_wp_error($rl)) return ['step' => 'login', 'email' => $email, 'error' => $rl->get_error_message()];
+        $sent = self::send_code($user, 'staff', 'Κωδικός σύνδεσης – Διαχειριστικό εγγυήσεων');
+        if ($sent !== true) return ['step' => 'login', 'email' => $email, 'error' => 'Δεν ήταν δυνατή η αποστολή του κωδικού: ' . $sent];
+        return ['step' => 'otp', 'email' => $email, 'info' => sprintf('Στείλαμε κωδικό μίας χρήσης στο %s.', TWD_Util::mask_email($user->user_email))];
+    }
+
+    private static function step_otp($email, $code) {
+        $user = self::team_user($email);
+        if (!$user) return ['step' => 'login', 'error' => 'Ξεκινήστε ξανά τη σύνδεση.'];
+        $res = TWD_OTP::verify('staff', strtolower($user->user_email), $code, $user->ID);
+        if (is_wp_error($res)) {
+            self::fail();
+            TWD_DB::log_event('staff_otp_failed', ['email' => $email, 'reason' => $res->get_error_message()], 0, 0, 'visitor');
+            return ['step' => 'otp', 'email' => $email, 'error' => $res->get_error_message()];
+        }
+        TWD_OTP::mark_used($res['row']->id);
+        self::sign_in($user);
+    }
+
+    private static function step_forgot($email) {
+        $generic = ['step' => 'reset', 'email' => $email, 'info' => 'Αν το email ανήκει σε μέλος της ομάδας, θα λάβετε σε λίγο κωδικό. Συμπληρώστε τον μαζί με τον νέο σας κωδικό πρόσβασης.'];
+        if (!is_email($email)) return ['step' => 'forgot', 'error' => 'Συμπληρώστε έγκυρο email.'];
+        $rl = TWD_OTP::rate_limit_ok($email);
+        if (is_wp_error($rl)) return ['step' => 'forgot', 'email' => $email, 'error' => $rl->get_error_message()];
+        $user = self::team_user($email);
+        if ($user) {
+            self::send_code($user, 'staff_reset', 'Ορισμός κωδικού πρόσβασης – Διαχειριστικό εγγυήσεων');
+        } else {
+            TWD_OTP::create('staff_unknown', $email, 0); // counts toward the rate limit
+        }
+        return $generic;
+    }
+
+    private static function step_reset($email, $code, $p1, $p2) {
+        $base = ['step' => 'reset', 'email' => $email];
+        if (mb_strlen($p1) < self::MIN_PASSWORD) return $base + ['error' => sprintf('Ο κωδικός πρόσβασης πρέπει να έχει τουλάχιστον %d χαρακτήρες.', self::MIN_PASSWORD)];
+        if ($p1 !== $p2) return $base + ['error' => 'Οι δύο κωδικοί δεν ταιριάζουν.'];
+        $user = self::team_user($email);
+        if (!$user) { self::fail(); return $base + ['error' => 'Ο κωδικός έληξε ή δεν βρέθηκε. Ζητήστε νέο κωδικό.']; }
+        $res = TWD_OTP::verify('staff_reset', strtolower($user->user_email), $code, $user->ID);
+        if (is_wp_error($res)) { self::fail(); return $base + ['error' => $res->get_error_message()]; }
+        TWD_OTP::mark_used($res['row']->id);
+        wp_set_password($p1, $user->ID);
+        TWD_DB::log_event('staff_password_set', '', 0, 0, 'admin:' . $user->user_login);
+        self::sign_in(get_user_by('id', $user->ID));
+    }
+
+    public static function logout_url() {
+        return wp_nonce_url(add_query_arg('action', 'twd_logout', TWD_App::admin_url()), 'twd_logout');
+    }
+}

@@ -1,0 +1,639 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+/**
+ * Public side:
+ *  [thermic_warranty_register] – serial → email → email code → details, terms, consents → warranty code (printable as a card)
+ *  [thermic_warranty_portal]   – email code sign-in → the customer's warranties, Service dates, consents, own data
+ *
+ * Everything runs through admin-ajax so full-page caches never serve stale personal data;
+ * the portal content itself is fetched after page load.
+ */
+final class TWD_Frontend {
+    const COOKIE = 'twd_portal_session';
+
+    public static function init() {
+        // Sales demo: the forms are shown only by TWD_Demo's shortcode on the protected page.
+
+        $public = ['reg_check', 'reg_start', 'reg_verify', 'reg_submit', 'login_start', 'login_verify', 'portal', 'portal_marketing', 'portal_lang', 'portal_service', 'portal_claim', 'portal_export', 'portal_erase', 'portal_erase_start', 'portal_erase_confirm', 'portal_refresh', 'reg_portal_start', 'logout'];
+        foreach ($public as $a) {
+            add_action('wp_ajax_twd_' . $a, [__CLASS__, 'ajax_' . $a]);
+            add_action('wp_ajax_nopriv_twd_' . $a, [__CLASS__, 'ajax_' . $a]);
+        }
+    }
+
+    public static function no_cache_on_our_pages() {
+        if (!is_singular()) return;
+        $post = get_post();
+        if ($post && (has_shortcode($post->post_content, 'twd_warranty_register') || has_shortcode($post->post_content, 'twd_warranty_portal'))) {
+            if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true);
+            nocache_headers();
+        }
+    }
+
+    public static function register_assets() {
+        wp_register_style('twd-fonts', TWD_URL . 'assets/css/fonts.css', [], TWD_VERSION);
+        wp_register_style('twd-front', TWD_URL . 'assets/css/frontend.css', ['twd-fonts'], TWD_VERSION);
+        wp_add_inline_style('twd-front', TWD_App::brand_vars());
+        wp_register_script('twd-otp', TWD_URL . 'assets/js/otp-input.js', [], TWD_VERSION, true);
+        wp_register_script('twd-front', TWD_URL . 'assets/js/frontend.js', ['twd-otp'], TWD_VERSION, true);
+        wp_localize_script('twd-front', 'TWD', [
+            'ajax' => admin_url('admin-ajax.php'),
+            'maxMb' => (int) TWD_Settings::get('invoice_max_mb'),
+            'invoiceMode' => TWD_Settings::invoice_mode(),
+            'turnstile' => TWD_Guard::on('public') ? TWD_Guard::site_key() : '',
+            'lang' => TWD_I18n::lang(),
+            'i18n' => TWD_I18n::js(),
+            'demo' => TWD_Demo::js_config(),
+        ]);
+        if (TWD_Guard::on('public')) wp_register_script('twd-turnstile', TWD_Guard::explicit_script_url(), ['twd-front'], null, true);
+    }
+
+    public static function enqueue() {
+        if (!wp_script_is('twd-front', 'registered')) self::register_assets();
+        wp_enqueue_style('twd-front');
+        wp_enqueue_script('twd-front');
+        if (wp_script_is('twd-turnstile', 'registered')) wp_enqueue_script('twd-turnstile');
+    }
+
+    // ------------------------------------------------------------------ shortcodes
+
+    public static function shortcode_register() {
+        self::enqueue();
+        $s = TWD_Settings::all();
+        $privacy = TWD_Settings::page_url('privacy');
+        ob_start();
+        include TWD_DIR . 'templates/register.php';
+        return ob_get_clean();
+    }
+
+    public static function shortcode_portal() {
+        self::enqueue();
+        ob_start();
+        include TWD_DIR . 'templates/portal.php';
+        return ob_get_clean();
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private static function input($key) {
+        return isset($_POST[$key]) ? trim(wp_unslash((string) $_POST[$key])) : '';
+    }
+
+    private static function fail($message, $field = '', $status = 400) {
+        wp_send_json_error(['message' => twd__($message), 'field' => $field], $status);
+    }
+
+    private static function email_input() {
+        $email = strtolower(sanitize_email(self::input('email')));
+        if (!$email || !is_email($email)) self::fail('Συμπληρώστε ένα έγκυρο email.', 'email');
+        // Sales demo: only the demo email set in the plugin settings.
+        if ($email !== TWD_Demo::demo_email()) self::fail('Στην επίδειξη η ενεργοποίηση και η είσοδος γίνονται μόνο με το email επίδειξης.', 'email');
+        return $email;
+    }
+
+    /** Serial lookup with the messages the customer should see. */
+    private static function usable_serial($raw) {
+        $serial = TWD_Util::normalize_serial($raw);
+        if ($serial === '') self::fail('Συμπληρώστε τον σειριακό αριθμό.', 'serial');
+        $row = TWD_Warranty::find_serial($serial);
+        if (!$row || $row->status === 'void') {
+            self::fail('Ο σειριακός αριθμός δεν βρέθηκε. Ελέγξτε ότι τον πληκτρολογήσατε σωστά, όπως αναγράφεται στην ετικέτα του προϊόντος.', 'serial');
+        }
+        // Sales demo: only the serial given to this demo.
+        if ((int) $row->id !== TWD_Demo::session_serial_id()) {
+            self::fail('Στην επίδειξη χρησιμοποιείται μόνο ο σειριακός που δόθηκε στην έναρξή της.', 'serial');
+        }
+        if ($row->status !== 'available') {
+            self::fail('Για αυτόν τον σειριακό αριθμό έχει ήδη ενεργοποιηθεί εγγύηση. Αν είναι δική σας, συνδεθείτε στην πύλη εγγυήσεων.', 'serial');
+        }
+        return $row;
+    }
+
+    // ------------------------------------------------------------------ registration
+
+    /** Honeypot (always), time trap and Turnstile (when $challenge). */
+    private static function guard($challenge, $skip_turnstile = false) {
+        $g = TWD_Guard::check('public', $challenge, $skip_turnstile);
+        if ($g !== true) self::fail($g, 'guard', 403);
+    }
+
+    /**
+     * Step 1: the serial alone. Bot checks (honeypot, time trap, Turnstile) and a per-IP limit come first,
+     * so the form can't be used to sweep serial numbers. A valid, unregistered serial gets a signed pass
+     * that lets the next steps (email, "send a new code") go ahead without a second challenge.
+     */
+    public static function ajax_reg_check() {
+        self::guard(true);
+        if (!TWD_Guard::throttle('serial_check', 300, HOUR_IN_SECONDS)) {
+            self::fail('Πάρα πολλές αναζητήσεις σειριακών αριθμών. Δοκιμάστε ξανά σε λίγο.', '', 429);
+        }
+        $serial = self::usable_serial(self::input('serial'));
+        wp_send_json_success([
+            'serial' => $serial->serial,
+            'product' => trim($serial->product_name . ($serial->product_code ? ' (' . $serial->product_code . ')' : '')),
+            'pass' => TWD_Guard::pass('serial|' . TWD_Util::normalize_serial($serial->serial)),
+        ]);
+    }
+
+    public static function ajax_reg_start() {
+        $email = self::email_input();
+        // Only after step 1: the pass proves the serial was checked (with the bot checks) in the last 30 minutes.
+        if (!TWD_Guard::pass_ok(self::input('pass'), 'serial|' . TWD_Util::normalize_serial(self::input('serial')))) {
+            self::fail('Η σελίδα έμεινε ανοιχτή πολύ ώρα. Ξεκινήστε ξανά από τον σειριακό αριθμό.', 'restart', 403);
+        }
+        self::guard(true, true); // honeypot and form stamp
+        $serial = self::usable_serial(self::input('serial'));
+        $rl = TWD_OTP::rate_limit_ok($email);
+        if (is_wp_error($rl)) self::fail($rl->get_error_message(), '', 429);
+
+        [, $code] = TWD_OTP::create('register', $email, $serial->id);
+        $vars = [
+            'company_name' => TWD_Settings::get('company_name'),
+            'company_contact' => TWD_Settings::company_contact(TWD_I18n::lang()),
+            'serial' => $serial->serial,
+            'code' => $code,
+            'minutes' => TWD_OTP::ttl_minutes(),
+        ];
+        $sent = TWD_Messenger::send_template_email($email, 'registration_otp', $vars);
+        if ($sent !== true) {
+            TWD_DB::log_event('otp_email_failed', $sent, 0, $serial->id, 'system');
+            self::fail('Δεν ήταν δυνατή η αποστολή του email. Δοκιμάστε ξανά αργότερα.', '', 500);
+        }
+        TWD_DB::log_event('otp_sent', ['email' => TWD_Util::mask_email($email)], 0, $serial->id, 'customer:' . $email);
+        wp_send_json_success([
+            'message' => sprintf(twd__('Στείλαμε έναν 6ψήφιο κωδικό επαλήθευσης στο %s. Ισχύει για %d λεπτά.'), TWD_Util::mask_email($email), TWD_OTP::ttl_minutes()),
+            'serial' => $serial->serial,
+            'ttl' => TWD_OTP::ttl_minutes() * MINUTE_IN_SECONDS,
+            'demo_code' => $code, // sales demo: no email is sent; the code is shown and filled in on screen
+        ]);
+    }
+
+    public static function ajax_reg_verify() {
+        self::guard(false);
+        $email = self::email_input();
+        $serial = self::usable_serial(self::input('serial'));
+        $res = TWD_OTP::verify('register', $email, self::input('code'), $serial->id);
+        if (is_wp_error($res)) self::fail($res->get_error_message(), 'code');
+        wp_send_json_success(self::verified_payload($res['token'], $serial, $email));
+    }
+
+    public static function ajax_reg_submit() {
+        self::guard(true);
+        $otp = TWD_OTP::token_row('register', self::input('token'));
+        if (!$otp) self::fail('Η επαλήθευση έληξε. Ξεκινήστε ξανά από τον σειριακό αριθμό.', 'token', 401);
+        $serial = TWD_Warranty::serial_by_id($otp->serial_id);
+        if (!$serial || $serial->status !== 'available') self::fail('Ο σειριακός αριθμός έχει ήδη καταχωρηθεί.', 'serial', 409);
+        if ((int) $serial->id !== TWD_Demo::session_serial_id()) self::fail('Η επίδειξη έληξε. Ξεκινήστε νέα επίδειξη.', 'token', 401);
+
+        // ---- validation (server side is authoritative; the browser checks are only for convenience)
+        $name = sanitize_text_field(self::input('customer_name'));
+        if (mb_strlen($name) < 3 || strpos($name, ' ') === false) self::fail('Συμπληρώστε ονοματεπώνυμο.', 'customer_name');
+
+        $mobile = TWD_Util::clean_phone(self::input('phone_mobile'));
+        if (!TWD_Util::valid_mobile($mobile)) self::fail('Συμπληρώστε έγκυρο κινητό τηλέφωνο (π.χ. 69XXXXXXXX).', 'phone_mobile');
+
+        $landline_raw = self::input('phone_landline');
+        $landline = TWD_Util::clean_phone($landline_raw);
+        if ($landline_raw !== '' && $landline === '') self::fail('Το σταθερό τηλέφωνο δεν είναι έγκυρο.', 'phone_landline');
+
+        $address = sanitize_text_field(self::input('address'));
+        if (mb_strlen($address) < 3) self::fail('Συμπληρώστε τη διεύθυνση.', 'address');
+        $city = sanitize_text_field(self::input('city'));
+        $postcode = trim(preg_replace('/\s+/', ' ', self::input('postcode')));
+        // Greek: 5 digits. English (customers abroad): 3–10 letters/digits, or none where there are no postcodes.
+        if (TWD_I18n::lang() === 'en') {
+            if ($postcode !== '' && !preg_match('/^[A-Za-z0-9 \-]{3,10}$/', $postcode)) self::fail('Ο ταχυδρομικός κώδικας δεν είναι έγκυρος.', 'postcode');
+        } elseif (!preg_match('/^\d{5}$/', str_replace(' ', '', $postcode))) {
+            self::fail('Ο ταχυδρομικός κώδικας πρέπει να έχει 5 ψηφία.', 'postcode');
+        } else {
+            $postcode = str_replace(' ', '', $postcode);
+        }
+
+        $partner_country = strtoupper(sanitize_key(self::input('partner_country'))) ?: 'GR';
+        if (!isset(TWD_Util::enabled_countries()[$partner_country])) self::fail('Επιλέξτε χώρα από τη λίστα.', 'partner_vat');
+        [$vat, $vat_err] = TWD_Util::tax_id($partner_country, self::input('partner_vat'));
+        if ($vat_err) self::fail(twd__('Συνεργάτης:') . ' ' . $vat_err, 'partner_vat');
+        $partner_email = strtolower(sanitize_email(self::input('partner_email')));
+        if (!is_email($partner_email)) self::fail('Συμπληρώστε έγκυρο email συνεργάτη.', 'partner_email');
+
+        $invoice_number = sanitize_text_field(self::input('invoice_number'));
+        if ($invoice_number === '') self::fail('Συμπληρώστε τον αριθμό του παραστατικού αγοράς.', 'invoice_number');
+
+        $purchase = self::input('purchase_date');
+        $d = DateTimeImmutable::createFromFormat('!Y-m-d', $purchase);
+        if (!$d || $d->format('Y-m-d') !== $purchase) self::fail('Συμπληρώστε την ημερομηνία αγοράς.', 'purchase_date');
+        if ($purchase > TWD_Schedule::today()) self::fail('Η ημερομηνία αγοράς δεν μπορεί να είναι μελλοντική.', 'purchase_date');
+        if ($purchase < '2000-01-01') self::fail('Η ημερομηνία αγοράς δεν είναι έγκυρη.', 'purchase_date');
+        $max_delay = (int) TWD_Settings::get('max_registration_delay_days');
+        if ($max_delay > 0 && TWD_Schedule::diff_days($purchase, TWD_Schedule::today()) > $max_delay) {
+            self::fail(sprintf(twd__('Η ενεργοποίηση πρέπει να γίνει μέσα σε %d ημέρες από την αγορά. Επικοινωνήστε μαζί μας.'), $max_delay), 'purchase_date');
+        }
+
+        $consents = [
+            'terms' => self::input('consent_terms') === '1',
+            'data_accuracy' => self::input('consent_accuracy') === '1',
+            'marketing' => self::input('consent_marketing') === '1',
+        ];
+        if (!$consents['terms']) self::fail('Για να ολοκληρωθεί η ενεργοποίηση πρέπει να αποδεχθείτε τους όρους εγγύησης.', 'consent_terms');
+        if (!$consents['data_accuracy']) self::fail('Επιβεβαιώστε ότι τα στοιχεία είναι σωστά.', 'consent_accuracy');
+        $terms_set = TWD_Terms::resolve($serial->terms_set, $purchase);
+        $terms = TWD_Terms::current($terms_set, TWD_I18n::lang());
+        if ((int) self::input('terms_set') !== $terms_set || (int) self::input('terms_version') !== (int) $terms['version'] || self::input('terms_lang') !== $terms['lang']) {
+            self::fail('Οι όροι εγγύησης ενημερώθηκαν στο μεταξύ. Ανανεώστε τη σελίδα, διαβάστε τους και αποδεχθείτε τους ξανά.', 'consent_terms', 409);
+        }
+
+        $invoice = ['file' => '', 'name' => ''];
+        $invoice_mode = TWD_Settings::invoice_mode();
+        if ($invoice_mode !== 'off' && !empty($_FILES['invoice_file']['name'])) {
+            $invoice = TWD_Util::store_invoice($_FILES['invoice_file']);
+            if (is_wp_error($invoice)) self::fail($invoice->get_error_message(), 'invoice_file');
+        } elseif ($invoice_mode === 'required') {
+            self::fail('Επισυνάψτε το παραστατικό αγοράς (PDF, JPG ή PNG).', 'invoice_file');
+        }
+
+        $w = TWD_Warranty::activate($serial->id, [
+            'customer_name' => $name,
+            'email' => $otp->email,
+            'phone_landline' => $landline,
+            'phone_mobile' => $mobile,
+            'address' => $address,
+            'postcode' => $postcode,
+            'city' => $city,
+            'partner_vat' => $vat,
+            'partner_country' => $partner_country,
+            'partner_email' => $partner_email,
+            'invoice_number' => $invoice_number,
+            'invoice_file' => $invoice['file'],
+            'invoice_original_name' => $invoice['name'],
+            'purchase_date' => $purchase,
+            'lang' => TWD_I18n::lang(),
+            'terms_set' => $terms_set,
+        ], $consents);
+        if (is_wp_error($w)) {
+            if ($invoice['file']) @unlink(TWD_Util::invoice_path($invoice['file']));
+            self::fail($w->get_error_message(), 'serial', 409);
+        }
+        TWD_OTP::mark_used($otp->id);
+        // Marketing consent is per person: a "yes" now covers the customer's other products too; no tick leaves
+        // an existing consent of the same person in place (and the new product follows it).
+        $others = array_filter(TWD_Warranty::by_email($w->email), function ($o) use ($w) { return (int) $o->id !== (int) $w->id; });
+        if ($consents['marketing']) {
+            TWD_Warranty::set_marketing_for_email($w->email, true, 'registration');
+        } elseif ($others && TWD_Warranty::marketing_status($w->email)['state'] !== 'no') {
+            foreach ($others as $o) { if ((int) $o->marketing_opt_in === 1) { TWD_Warranty::set_marketing($w, true, 'inherited'); break; } }
+        }
+
+        $vars = TWD_Messenger::warranty_vars($w);
+        $sent = TWD_Messenger::send_template_email($w->email, 'activation', $vars);
+        TWD_Cron::log_message($w->id, 'activation', 'email', $w->email, $sent);
+        TWD_DB::log_event($sent === true ? 'activation_email_sent' : 'activation_email_failed', $sent === true ? '' : $sent, $w->id, $w->serial_id, 'system');
+        $sms = TWD_Messenger::send_template_sms($w->phone_mobile, 'activation', $vars);
+        if ($sms !== null) TWD_Cron::log_message($w->id, 'activation', 'sms', $w->phone_mobile, $sms);
+        if ($sms !== null) TWD_DB::log_event($sms === true ? 'activation_sms_sent' : 'activation_sms_failed', $sms === true ? '' : $sms, $w->id, $w->serial_id, 'system');
+        do_action('twd_warranty_activated', $w);
+
+        $next = TWD_Warranty::next_service($w);
+        wp_send_json_success([
+            'warranty_code' => $w->warranty_code,
+            'serial' => $w->serial,
+            'product' => $w->product_name ?: $w->product_code,
+            'customer_name' => $w->customer_name,
+            'warranty_end' => TWD_Util::date_label($w->warranty_end),
+            'next_service' => $next ? TWD_Util::date_label($next['due']) : '',
+            'email' => TWD_Util::mask_email($w->email),
+            'portal_url' => TWD_Settings::page_url('portal'),
+            'demo_left' => TWD_Demo::seconds_left(),
+        ]);
+    }
+
+    // ------------------------------------------------------------------ portal sign-in
+
+    public static function ajax_login_start() {
+        $email = self::email_input();
+        self::guard(true);
+        $generic = sprintf(twd__('Αν υπάρχουν εγγυήσεις με το email %s, θα λάβετε σε λίγο έναν κωδικό σύνδεσης.'), TWD_Util::mask_email($email));
+        $rl = TWD_OTP::rate_limit_ok($email);
+        if (is_wp_error($rl)) self::fail($rl->get_error_message(), '', 429);
+        if (!TWD_Warranty::by_email($email)) {
+            // Sales demo: say it plainly (the demo email is known to everyone using the demo).
+            self::fail('Σε αυτή την επίδειξη δεν έχει ενεργοποιηθεί ακόμη εγγύηση. Ολοκληρώστε πρώτα την «Ενεργοποίηση εγγύησης».', 'email', 404);
+        }
+        [, $code] = TWD_OTP::create('login', $email, TWD_Demo::session_serial_id());
+        TWD_Messenger::send_template_email($email, 'login_otp', [
+            'company_name' => TWD_Settings::get('company_name'),
+            'company_contact' => TWD_Settings::company_contact(TWD_I18n::lang()),
+            'code' => $code,
+            'minutes' => TWD_OTP::ttl_minutes(),
+        ]);
+        wp_send_json_success(['message' => $generic, 'ttl' => TWD_OTP::ttl_minutes() * MINUTE_IN_SECONDS, 'demo_code' => $code]);
+    }
+
+    public static function ajax_login_verify() {
+        self::guard(false);
+        $email = self::email_input();
+        $res = TWD_OTP::verify('login', $email, self::input('code'), TWD_Demo::session_serial_id());
+        if (is_wp_error($res)) self::fail($res->get_error_message(), 'code');
+        self::set_cookie($res['token'], time() + TWD_OTP::session_minutes() * MINUTE_IN_SECONDS);
+        foreach (TWD_Warranty::by_email($email) as $w) {
+            TWD_DB::log_event('portal_login', '', $w->id, $w->serial_id, 'customer:' . $email);
+        }
+        wp_send_json_success(['message' => 'ok']);
+    }
+
+    private static function set_cookie($value, $expires) {
+        $opts = [
+            'expires' => $expires,
+            'path' => COOKIEPATH ?: '/',
+            'domain' => COOKIE_DOMAIN ?: '',
+            'secure' => is_ssl(),
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ];
+        setcookie(self::COOKIE, $value, $opts);
+    }
+
+    /** @return object|null the login row of the signed-in customer */
+    public static function session() {
+        $token = isset($_COOKIE[self::COOKIE]) ? (string) $_COOKIE[self::COOKIE] : '';
+        return $token ? TWD_OTP::token_row('login', $token) : null;
+    }
+
+    /** CSRF token bound to the session. */
+    private static function csrf($session) {
+        return substr(hash_hmac('sha256', 'csrf' . $session->id . $session->token_hash, wp_salt('nonce')), 0, 32);
+    }
+
+    private static function require_session() {
+        $s = self::session();
+        if (!$s) self::fail('Η σύνδεση έληξε. Συνδεθείτε ξανά.', 'session', 401);
+        if (!hash_equals(self::csrf($s), self::input('csrf'))) self::fail('Μη έγκυρο αίτημα. Ανανεώστε τη σελίδα.', 'csrf', 403);
+        return $s;
+    }
+
+    /** ↻ on the sign-in timer: another full session. */
+    public static function ajax_portal_refresh() {
+        $s = self::require_session();
+        $left = TWD_OTP::extend($s);
+        self::set_cookie((string) $_COOKIE[self::COOKIE], time() + $left);
+        wp_send_json_success(['left' => $left]);
+    }
+
+    /** Owner details from the customer's newest warranty, to fill in the form for another product. */
+    public static function prefill($email) {
+        $w = TWD_Warranty::by_email($email);
+        if (!$w) return null;
+        $w = $w[0];
+        return ['customer_name' => $w->customer_name, 'phone_mobile' => $w->phone_mobile, 'phone_landline' => $w->phone_landline,
+            'address' => $w->address, 'postcode' => $w->postcode, 'city' => $w->city];
+    }
+
+    /**
+     * Another product from «Οι εγγυήσεις μου»: a customer signed in there (email already verified) goes from the
+     * serial straight to the details, without a new code. Needs the step-1 pass (bot checks done) and the session.
+     */
+    public static function ajax_reg_portal_start() {
+        $s = self::session();
+        if (!$s) self::fail('Η σύνδεση στις «Οι εγγυήσεις μου» έληξε. Συνεχίστε με το email σας.', 'session', 401);
+        if (!TWD_Guard::pass_ok(self::input('pass'), 'serial|' . TWD_Util::normalize_serial(self::input('serial')))) {
+            self::fail('Η σελίδα έμεινε ανοιχτή πολύ ώρα. Ξεκινήστε ξανά από τον σειριακό αριθμό.', 'restart', 403);
+        }
+        $serial = self::usable_serial(self::input('serial'));
+        $token = TWD_OTP::issue_token('register', $s->email, $serial->id);
+        TWD_DB::log_event('registration_from_portal', ['serial' => $serial->serial], 0, $serial->id, 'customer:' . $s->email);
+        wp_send_json_success(self::verified_payload($token, $serial, $s->email));
+    }
+
+    /** What the details step needs once the email is verified (by code or by the portal sign-in). */
+    private static function verified_payload($token, $serial, $email) {
+        return [
+            'token' => $token,
+            'product' => trim($serial->product_name . ($serial->product_code ? ' (' . $serial->product_code . ')' : '')),
+            'serial' => $serial->serial,
+            'email' => $email,
+            // Terms that apply to this product; the form shows the right one once the purchase date is entered.
+            'terms' => TWD_Terms::candidates($serial, TWD_I18n::lang()),
+            // Owner details of an existing customer (only after verification, so nobody sees someone else's).
+            'prefill' => self::prefill($email),
+        ];
+    }
+
+    public static function ajax_logout() {
+        $s = self::session();
+        if ($s) TWD_OTP::mark_used($s->id);
+        self::set_cookie('', time() - 3600);
+        wp_send_json_success();
+    }
+
+    public static function ajax_portal() {
+        $s = self::session();
+        if (!$s) wp_send_json_success(['signed_in' => false]);
+        $warranties = TWD_Warranty::by_email($s->email);
+        $csrf = self::csrf($s);
+        $email = $s->email;
+        $left = min(TWD_OTP::token_seconds_left($s), TWD_Demo::seconds_left()); // sales demo: never past the demo's end
+        ob_start();
+        include TWD_DIR . 'templates/portal-content.php';
+        wp_send_json_success(['signed_in' => true, 'html' => ob_get_clean(), 'csrf' => $csrf, 'left' => $left]);
+    }
+
+    private static function owned_warranty($session) {
+        $w = TWD_Warranty::get((int) self::input('warranty_id'));
+        if (!$w || $w->email !== $session->email || $w->anonymized_at || (int) $w->serial_id !== TWD_Demo::session_serial_id()) self::fail('Η εγγύηση δεν βρέθηκε.', '', 404);
+        return $w;
+    }
+
+    /** One choice for the person: applies to all their warranties. */
+    /** Language for emails and SMS, for all of the customer's warranties. */
+    public static function ajax_portal_lang() {
+        $s = self::require_session();
+        $lang = TWD_I18n::norm(self::input('comm_lang'));
+        if (!$lang) self::fail('Επιλέξτε γλώσσα.', 'comm_lang');
+        TWD_Warranty::set_lang_for_email($s->email, $lang);
+        wp_send_json_success(['message' => TWD_I18n::with($lang, function () { return twd__('Η γλώσσα επικοινωνίας αποθηκεύτηκε.'); })]);
+    }
+
+    public static function ajax_portal_marketing() {
+        $s = self::require_session();
+        $choice = self::input('granted');
+        if ($choice !== '1' && $choice !== '0') self::fail('Επιλέξτε «Ναι» ή «Όχι».', 'marketing');
+        $granted = $choice === '1';
+        TWD_Warranty::set_marketing_for_email($s->email, $granted, 'portal');
+        wp_send_json_success(['message' => $granted
+            ? twd__('Η επιλογή σας αποθηκεύτηκε: θα λαμβάνετε ενημερώσεις και προσφορές. Μπορείτε να την αλλάξετε οποτεδήποτε.')
+            : twd__('Η επιλογή σας αποθηκεύτηκε: η συγκατάθεσή σας ανακλήθηκε και δεν θα λαμβάνετε ενημερώσεις και προσφορές. Τα μηνύματα για το Service και την εγγύηση συνεχίζουν κανονικά.')]);
+    }
+
+    /** Customer submits the Service of a milestone: date, technician ΑΦΜ, receipt. */
+    public static function ajax_portal_service() {
+        $s = self::require_session();
+        self::guard(false);
+        $w = self::owned_warranty($s);
+        $no = (int) self::input('milestone_no');
+        $m = null;
+        foreach (TWD_Warranty::timeline($w) as $row) {
+            if ($row['type'] === 'service' && $row['no'] === $no) $m = $row;
+        }
+        if (!$m || !$m['can_submit']) self::fail('Η υποβολή για αυτό το Service δεν είναι διαθέσιμη. Ανανεώστε τη σελίδα.', '', 409);
+
+        $date = self::input('performed_date');
+        $d = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        if (!$d || $d->format('Y-m-d') !== $date) self::fail('Συμπληρώστε την ημερομηνία του Service.', 'performed_date');
+        if ($date > TWD_Schedule::today()) self::fail('Η ημερομηνία του Service δεν μπορεί να είναι μελλοντική.', 'performed_date');
+        // Sales demo: the Service submission is open at once, so any date from the purchase on is accepted.
+        $earliest = $w->purchase_date;
+        if ($date < $earliest) {
+            self::fail(sprintf(twd__('Για το %dο Service δεκτές είναι ημερομηνίες από %s και μετά.'), $no, TWD_Util::date_label($earliest)), 'performed_date');
+        }
+        $tech_country = strtoupper(sanitize_key(self::input('technician_country'))) ?: 'GR';
+        if (!isset(TWD_Util::enabled_countries()[$tech_country])) self::fail('Επιλέξτε χώρα από τη λίστα.', 'technician_vat');
+        [$vat, $vat_err] = TWD_Util::tax_id($tech_country, self::input('technician_vat'));
+        if ($vat_err) self::fail(twd__('Τεχνικός:') . ' ' . $vat_err, 'technician_vat');
+        $receipt = ['file' => '', 'name' => '', 'number' => '', 'date' => null];
+        if (TWD_Settings::service_needs_fields()) {
+            $receipt['number'] = sanitize_text_field(self::input('receipt_number'));
+            if ($receipt['number'] === '') self::fail('Συμπληρώστε τον αριθμό της απόδειξης.', 'receipt_number');
+            $rd = self::input('receipt_date');
+            $rdo = DateTimeImmutable::createFromFormat('!Y-m-d', $rd);
+            if (!$rdo || $rdo->format('Y-m-d') !== $rd) self::fail('Συμπληρώστε την ημερομηνία του παραστατικού.', 'receipt_date');
+            if ($rd > TWD_Schedule::today()) self::fail('Η ημερομηνία του παραστατικού δεν μπορεί να είναι μελλοντική.', 'receipt_date');
+            if ($rd < $earliest) self::fail(sprintf(twd__('Η ημερομηνία του παραστατικού πρέπει να είναι από %s και μετά.'), TWD_Util::date_label($earliest)), 'receipt_date');
+            $receipt['date'] = $rd;
+        }
+        if (self::input('genuine_parts') !== '1') self::fail('Επιβεβαιώστε ότι χρησιμοποιήθηκαν αυθεντικά ανταλλακτικά.', 'genuine_parts');
+        if (TWD_Settings::service_needs_file()) {
+            if (empty($_FILES['receipt_file']['name'])) self::fail('Επισυνάψτε την απόδειξη του Service (PDF, JPG ή PNG).', 'receipt_file');
+            $file = TWD_Util::store_invoice($_FILES['receipt_file'], twd__('της απόδειξης'));
+            if (is_wp_error($file)) self::fail($file->get_error_message(), 'receipt_file');
+            $receipt['file'] = $file['file'];
+            $receipt['name'] = $file['name'];
+        }
+
+        $row = TWD_Warranty::submit_service($w, $no, $date, $vat, sanitize_text_field(self::input('technician')), $receipt, sanitize_textarea_field(self::input('notes')), $tech_country);
+        $vars = TWD_Warranty::service_vars($w, $row);
+        TWD_Messenger::send_template_email($w->email, 'service_received', $vars);
+        $link = TWD_App::admin_url('warranties', ['view' => $w->id]);
+        foreach (TWD_Settings::get('service_notify_company') ? TWD_Messenger::admin_recipients() : [] as $to) {
+            TWD_Messenger::send_email($to, sprintf('[Εγγυήσεις] Νέα υποβολή Service – S/N %s', $w->serial), sprintf(
+                "Ο πελάτης %s καταχώρησε το %dο Service.\n\nS/N: %s\nΚωδικός εγγύησης: %s\nΗμερομηνία Service: %s\nΑΦΜ τεχνικού: %s\n\nΚαρτέλα εγγύησης: %s",
+                $w->customer_name, $no, $w->serial, $w->warranty_code, TWD_Util::date_label($date), $vat, $link));
+        }
+        do_action('twd_service_submitted', $w, $row);
+        wp_send_json_success(['message' => sprintf(twd__('Το %dο Service καταχωρήθηκε και η εγγύηση συνεχίζει να ισχύει. Σας στείλαμε επιβεβαίωση με email· κρατήστε και την πρωτότυπη απόδειξη.'), $no)]);
+    }
+
+    /** Repair / replacement request for a product under warranty. */
+    public static function ajax_portal_claim() {
+        $s = self::require_session();
+        self::guard(false);
+        $w = self::owned_warranty($s);
+        if (!TWD_Guard::hit('portal_claim', 10, 3600)) self::fail('Πολλές υποβολές. Δοκιμάστε ξανά αργότερα.', '', 429);
+        $can = TWD_Claims::can_claim($w);
+        if ($can !== true) self::fail($can, '', 409);
+        $type = self::input('claim_type') === 'replace' ? 'replace' : 'repair';
+        $desc = trim(sanitize_textarea_field(self::input('description')));
+        if (mb_strlen($desc) < 10) self::fail('Περιγράψτε το πρόβλημα (τουλάχιστον 10 χαρακτήρες).', 'description');
+        $desc = mb_substr($desc, 0, 3000);
+        $phone_raw = self::input('contact_phone');
+        $phone = $phone_raw === '' ? '' : TWD_Util::clean_phone($phone_raw);
+        if ($phone_raw !== '' && $phone === '') self::fail('Το τηλέφωνο δεν είναι έγκυρο.', 'contact_phone');
+        $uploads = TWD_Claims::uploaded_list('claim_files');
+        if (count($uploads) > TWD_Claims::MAX_FILES) self::fail(sprintf(twd__('Επισυνάψτε έως %d αρχεία.'), TWD_Claims::MAX_FILES), 'claim_files');
+        $files = [];
+        foreach ($uploads as $up) {
+            $f = TWD_Util::store_invoice($up, twd__('του συνημμένου'));
+            if (is_wp_error($f)) {
+                foreach ($files as $done) if ($p = TWD_Util::invoice_path($done['file'])) @unlink($p);
+                self::fail($f->get_error_message(), 'claim_files');
+            }
+            $files[] = $f;
+        }
+        $c = TWD_Claims::create($w, $type, $desc, $phone, $files);
+        if (is_wp_error($c)) self::fail($c->get_error_message(), '');
+        wp_send_json_success(['message' => sprintf(twd__('Το αίτημά σας #%d καταχωρήθηκε. Σας στείλαμε επιβεβαίωση με email και θα σας ενημερώσουμε για την εξέλιξή του.'), (int) $c->id)]);
+    }
+
+    public static function ajax_portal_export() {
+        $s = self::require_session();
+        $data = TWD_Privacy::customer_data($s->email);
+        TWD_DB::log_event('portal_data_export', '', 0, 0, 'customer:' . $s->email);
+        wp_send_json_success(['filename' => 'thermic-warranty-data.json', 'data' => $data]);
+    }
+
+    /** The explanation before deletion as HTML: blank line = paragraph, lines starting with «•» = list. */
+    public static function erase_html($lang) {
+        $out = '';
+        foreach (preg_split('/\n\s*\n/', trim(str_replace("\r\n", "\n", TWD_Settings::erase_text($lang)))) as $block) {
+            $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), 'strlen'));
+            if ($lines && count(array_filter($lines, function ($l) { return preg_match('/^[•\-\*]\s*/u', $l); })) === count($lines)) {
+                $out .= '<ul>' . implode('', array_map(function ($l) { return '<li>' . esc_html(preg_replace('/^[•\-\*]\s*/u', '', $l)) . '</li>'; }, $lines)) . '</ul>';
+            } elseif ($lines) {
+                $out .= '<p>' . implode('<br>', array_map('esc_html', $lines)) . '</p>';
+            }
+        }
+        return $out;
+    }
+
+    /** Deletion, step 1: the customer ticked «I want my details deleted» → a code to their email. */
+    public static function ajax_portal_erase_start() {
+        $s = self::require_session();
+        if (self::input('confirm') !== '1') self::fail('Επιλέξτε ότι επιθυμείτε τη διαγραφή των στοιχείων σας.', 'confirm');
+        $rl = TWD_OTP::rate_limit_ok($s->email);
+        if (is_wp_error($rl)) self::fail($rl->get_error_message(), '', 429);
+        [, $code] = TWD_OTP::create('erase', $s->email, TWD_Demo::session_serial_id());
+        TWD_Messenger::send_template_email($s->email, 'erasure_otp', [
+            'company_name' => TWD_Settings::get('company_name'),
+            'company_contact' => TWD_Settings::company_contact(TWD_I18n::lang()),
+            'code' => $code,
+            'minutes' => TWD_OTP::ttl_minutes(),
+        ]);
+        TWD_DB::log_event('erasure_code_sent', '', 0, 0, 'customer:' . $s->email);
+        wp_send_json_success([
+            'message' => sprintf(twd__('Στείλαμε κωδικό επιβεβαίωσης στο %s. Πληκτρολογήστε τον για να ολοκληρωθεί η διαγραφή.'), TWD_Util::mask_email($s->email)),
+            'ttl' => TWD_OTP::ttl_minutes() * MINUTE_IN_SECONDS,
+            'demo_code' => $code,
+        ]);
+    }
+
+    /** Deletion, step 2: the right code → every warranty of this email is anonymised at once; the session ends. */
+    public static function ajax_portal_erase_confirm() {
+        $s = self::require_session();
+        $res = TWD_OTP::verify('erase', $s->email, self::input('code'), TWD_Demo::session_serial_id());
+        if (is_wp_error($res)) self::fail($res->get_error_message(), 'code');
+        $email = $s->email;
+        $lang = TWD_Warranty::customer_lang($email);
+        $warranties = TWD_Warranty::by_email($email);
+        // The confirmation goes out first: afterwards the address no longer exists in the system.
+        TWD_Messenger::send_template_email($email, 'erasure_done', [
+            '_lang' => $lang,
+            'company_name' => TWD_Settings::get('company_name'),
+            'company_contact' => TWD_Settings::company_contact($lang),
+            'count' => count($warranties),
+        ]);
+        $codes = [];
+        foreach ($warranties as $w) {
+            $codes[] = $w->warranty_code;
+            TWD_Warranty::anonymize($w, 'customer_request');
+        }
+        TWD_DB::log_event('erasure_completed', ['warranties' => implode(', ', $codes), 'count' => count($codes)], 0, 0, 'customer:' . TWD_Util::mask_email($email));
+        TWD_OTP::mark_used($s->id);
+        self::set_cookie('', time() - 3600);
+        wp_send_json_success(['message' => twd__('Τα στοιχεία σας διαγράφηκαν. Σας στείλαμε σχετική επιβεβαίωση με email. Σας ευχαριστούμε που επιλέξατε τα προϊόντα μας.')]);
+    }
+
+    public static function ajax_portal_erase() {
+        $s = self::require_session();
+        // Sales demo: no WordPress privacy request (it would email the demo address).
+        wp_send_json_success(['message' => twd__('Στην επίδειξη δεν καταχωρείται αίτημα διαγραφής· τα στοιχεία της επίδειξης διαγράφονται έτσι κι αλλιώς στη λήξη της.')]);
+        $req = wp_create_user_request($s->email, 'remove_personal_data', [], 'pending');
+        if (is_wp_error($req)) {
+            if ($req->get_error_code() === 'duplicate_request') {
+                wp_send_json_success(['message' => twd__('Υπάρχει ήδη αίτημα διαγραφής σε εξέλιξη για το email σας.')]);
+            }
+            self::fail('Δεν ήταν δυνατή η καταχώρηση του αιτήματος. Επικοινωνήστε μαζί μας.');
+        }
+        wp_send_user_request($req);
+        TWD_DB::log_event('erasure_requested', '', 0, 0, 'customer:' . $s->email);
+        wp_send_json_success(['message' => twd__('Στείλαμε email επιβεβαίωσης για το αίτημα διαγραφής. Μετά την επιβεβαίωση θα εξεταστεί από την εταιρεία. Στοιχεία ενεργών εγγυήσεων διατηρούνται όσο διαρκεί η εγγύηση, ώστε να μπορεί να εξυπηρετηθεί.')]);
+    }
+}

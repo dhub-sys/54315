@@ -1,0 +1,180 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+/**
+ * One-time email codes.
+ *  - 'register': one new code per serial + email (each warranty gets its own code)
+ *  - 'login':    customer portal sign-in
+ * Codes and continuation tokens are stored as HMAC hashes only.
+ */
+final class TWD_OTP {
+    const MINUTE_CHOICES = [2, 3, 5, 10, 15];
+    const MAX_ATTEMPTS = 5;
+    const TOKEN_TTL_MINUTES = 60;
+    /** «Οι εγγυήσεις μου» sign-in duration choices (Ρυθμίσεις → Ασφάλεια); the customer can renew it. */
+    const SESSION_CHOICES = [10, 15, 30, 60, 120];
+    const MAX_SENDS_PER_HOUR_EMAIL = 1000; // sales demo: one shared demo email for all demos // short-lived codes mean a few more "send a new code"
+
+    /** How long an emailed code is valid (Settings → Ασφάλεια, default 2 minutes). */
+    public static function ttl_minutes() {
+        $m = (int) TWD_Settings::get('otp_minutes');
+        return in_array($m, self::MINUTE_CHOICES, true) ? $m : 2;
+    }
+
+    /** How long a «Οι εγγυήσεις μου» sign-in lasts, in minutes (default 60). */
+    public static function session_minutes() {
+        $m = (int) TWD_Settings::get('portal_session_minutes');
+        return in_array($m, self::SESSION_CHOICES, true) ? $m : 60;
+    }
+
+    /** Seconds left on a verified token row. */
+    public static function token_seconds_left($row) {
+        return $row ? max(0, strtotime($row->expires_at) - current_time('timestamp')) : 0;
+    }
+
+    /** Renews a sign-in for another full session; returns the seconds left. */
+    public static function extend($row) {
+        global $wpdb;
+        $exp = date('Y-m-d H:i:s', current_time('timestamp') + self::session_minutes() * MINUTE_IN_SECONDS);
+        $wpdb->update(TWD_DB::table('otps'), ['expires_at' => $exp], ['id' => (int) $row->id]);
+        return self::session_minutes() * MINUTE_IN_SECONDS;
+    }
+
+    /**
+     * A verified continuation token without an emailed code – only for a customer who is already signed in to
+     * «Οι εγγυήσεις μου» with the same email (their email was verified at sign-in). @return string token
+     */
+    public static function issue_token($purpose, $email, $serial_id = 0) {
+        global $wpdb;
+        $t = TWD_DB::table('otps');
+        $now = TWD_DB::now();
+        $token = bin2hex(random_bytes(32));
+        $wpdb->insert($t, [
+            'purpose' => $purpose,
+            'email' => $email,
+            'serial_id' => (int) $serial_id,
+            'code_hash' => self::hash(bin2hex(random_bytes(16))),
+            'verified_at' => $now,
+            'token_hash' => self::hash($token),
+            'expires_at' => date('Y-m-d H:i:s', current_time('timestamp') + self::TOKEN_TTL_MINUTES * MINUTE_IN_SECONDS),
+            'ip' => TWD_Util::client_ip(),
+            'created_at' => $now,
+        ]);
+        return $token;
+    }
+
+    /** Seconds left on the newest open code (for the countdown on the code screen). */
+    public static function seconds_left($purpose, $email, $serial_id = 0) {
+        global $wpdb;
+        $t = TWD_DB::table('otps');
+        $exp = $wpdb->get_var($wpdb->prepare(
+            "SELECT expires_at FROM $t WHERE purpose = %s AND email = %s AND serial_id = %d AND verified_at IS NULL ORDER BY id DESC LIMIT 1",
+            $purpose, $email, (int) $serial_id
+        ));
+        return $exp ? max(0, strtotime($exp) - current_time('timestamp')) : 0;
+    }
+    const MAX_SENDS_PER_HOUR_IP = 300; // sales demo: many demos from one office/expo network
+
+    public static function hash($value) {
+        return hash_hmac('sha256', (string) $value, wp_salt('auth') . 'twd_otp');
+    }
+
+    /** @return true|WP_Error */
+    /**
+     * Counts one code sent and says whether it is allowed: at most MAX_SENDS_PER_HOUR_EMAIL per email and
+     * MAX_SENDS_PER_HOUR_IP per IP within an hour. Atomic counters, so a burst of parallel requests cannot exceed them.
+     * @return true|WP_Error
+     */
+    public static function rate_limit_ok($email) {
+        if (!TWD_Guard::hit('otp_email|' . strtolower((string) $email), self::MAX_SENDS_PER_HOUR_EMAIL, HOUR_IN_SECONDS, '')) {
+            return new WP_Error('rate', twd__('Έχουν σταλεί πολλοί κωδικοί σε αυτό το email. Δοκιμάστε ξανά σε λίγο.'));
+        }
+        $ip = TWD_Util::client_ip();
+        if ($ip !== '' && !TWD_Guard::hit('otp_ip', self::MAX_SENDS_PER_HOUR_IP, HOUR_IN_SECONDS)) {
+            return new WP_Error('rate', twd__('Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε λίγο.'));
+        }
+        return true;
+    }
+
+    /**
+     * Creates a code (invalidating earlier unused ones for the same purpose/email/serial).
+     * @return array [id, code]
+     */
+    public static function create($purpose, $email, $serial_id = 0) {
+        global $wpdb;
+        $t = TWD_DB::table('otps');
+        $now = TWD_DB::now();
+        $wpdb->query($wpdb->prepare(
+            "UPDATE $t SET expires_at = %s WHERE purpose = %s AND email = %s AND serial_id = %d AND verified_at IS NULL AND expires_at > %s",
+            $now, $purpose, $email, (int) $serial_id, $now
+        ));
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $wpdb->insert($t, [
+            'purpose' => $purpose,
+            'email' => $email,
+            'serial_id' => (int) $serial_id,
+            'code_hash' => self::hash($code),
+            'expires_at' => date('Y-m-d H:i:s', current_time('timestamp') + self::ttl_minutes() * MINUTE_IN_SECONDS),
+            'ip' => TWD_Util::client_ip(),
+            'created_at' => $now,
+        ]);
+        return [(int) $wpdb->insert_id, $code];
+    }
+
+    /**
+     * Checks a code; on success returns a fresh continuation token (plain, given to the browser once).
+     * @return array|WP_Error ['token' => ..., 'row' => object]
+     */
+    public static function verify($purpose, $email, $code, $serial_id = 0) {
+        global $wpdb;
+        $t = TWD_DB::table('otps');
+        $now = TWD_DB::now();
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $t WHERE purpose = %s AND email = %s AND serial_id = %d AND verified_at IS NULL AND expires_at > %s ORDER BY id DESC LIMIT 1",
+            $purpose, $email, (int) $serial_id, $now
+        ));
+        if (!$row) {
+            return new WP_Error('otp', twd__('Ο κωδικός έληξε ή δεν βρέθηκε. Ζητήστε νέο κωδικό.'));
+        }
+        if ((int) $row->attempts >= self::MAX_ATTEMPTS) {
+            return new WP_Error('otp', twd__('Υπερβήκατε τον αριθμό προσπαθειών. Ζητήστε νέο κωδικό.'));
+        }
+        $wpdb->query($wpdb->prepare("UPDATE $t SET attempts = attempts + 1 WHERE id = %d", $row->id));
+        $code = preg_replace('/\D/', '', (string) $code);
+        if (!hash_equals($row->code_hash, self::hash($code))) {
+            $left = self::MAX_ATTEMPTS - (int) $row->attempts - 1;
+            return new WP_Error('otp', $left > 0 ? sprintf(twd__('Λάθος κωδικός. Απομένουν %d προσπάθειες.'), $left) : twd__('Λάθος κωδικός. Ζητήστε νέο κωδικό.'));
+        }
+        $token = bin2hex(random_bytes(32));
+        $wpdb->update($t, [
+            'verified_at' => $now,
+            'token_hash' => self::hash($token),
+            'expires_at' => date('Y-m-d H:i:s', current_time('timestamp') + ($purpose === 'login' ? self::session_minutes() : self::TOKEN_TTL_MINUTES) * MINUTE_IN_SECONDS),
+        ], ['id' => $row->id]);
+        $row->verified_at = $now;
+        return ['token' => $token, 'row' => $row];
+    }
+
+    /** Looks up a verified, unused, unexpired token. */
+    public static function token_row($purpose, $token) {
+        global $wpdb;
+        if (!is_string($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+        $t = TWD_DB::table('otps');
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $t WHERE purpose = %s AND token_hash = %s AND verified_at IS NOT NULL AND used_at IS NULL AND expires_at > %s LIMIT 1",
+            $purpose, self::hash($token), TWD_DB::now()
+        ));
+    }
+
+    public static function mark_used($id) {
+        global $wpdb;
+        $wpdb->update(TWD_DB::table('otps'), ['used_at' => TWD_DB::now()], ['id' => (int) $id]);
+    }
+
+    /** Housekeeping: drop rows older than 30 days. */
+    public static function purge() {
+        global $wpdb;
+        $t = TWD_DB::table('otps');
+        $wpdb->query($wpdb->prepare("DELETE FROM $t WHERE created_at < %s", date('Y-m-d H:i:s', current_time('timestamp') - 30 * DAY_IN_SECONDS)));
+    }
+}

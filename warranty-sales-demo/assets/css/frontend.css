@@ -1,0 +1,297 @@
+.tw-app {
+    --tw-accent: #c8102e;
+    --tw-accent-ink: #fff;
+    --tw-border: #d6d9de;
+    --tw-muted: #5f6b7a;
+    --tw-bg-soft: #f6f7f9;
+    --tw-ok: #1f7a3d;
+    --tw-bad: #b42318;
+    max-width: 760px;
+    margin: 0 auto;
+    font-family: 'Geom', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+}
+.tw-app *, .tw-app *::before, .tw-app *::after { box-sizing: border-box; }
+.tw-app h3 { margin: 0 0 .5em; }
+.tw-app fieldset { border: 1px solid var(--tw-border); border-radius: 8px; padding: 16px; margin: 0 0 18px; }
+.tw-app legend { font-weight: 600; padding: 0 6px; }
+
+.tw-steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 20px; counter-reset: tw; }
+.tw-steps li { flex: 1; font-size: 13px; color: var(--tw-muted); border-top: 4px solid var(--tw-border); padding-top: 6px; counter-increment: tw; }
+.tw-steps li::before { content: counter(tw) ". "; font-weight: 600; }
+.tw-steps li.is-current { color: inherit; border-color: var(--tw-accent); font-weight: 600; }
+.tw-steps li.is-done { border-color: var(--tw-ok); }
+
+.tw-field { margin: 0 0 14px; }
+.tw-field label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+.tw-app input[type=text], .tw-app input[type=email], .tw-app input[type=tel], .tw-app input[type=date], .tw-app input[type=file] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--tw-border); border-radius: 6px; font-size: 16px; background: #fff; color: inherit;
+}
+.tw-app input:focus { outline: 2px solid var(--tw-accent); outline-offset: 1px; }
+.tw-readonly { background: var(--tw-bg-soft) !important; }
+.tw-code-input { font-size: 26px !important; letter-spacing: 8px; text-align: center; max-width: 240px; }
+.tw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 600px) { .tw-grid { grid-template-columns: 1fr; } .tw-steps li { font-size: 0; } .tw-steps li::before { font-size: 13px; } }
+
+.tw-req { color: var(--tw-bad); }
+.tw-hint { color: var(--tw-muted); font-size: 14px; }
+.tw-invalid input, .tw-invalid.tw-check { border-color: var(--tw-bad) !important; }
+.tw-invalid.tw-check { outline: 2px solid var(--tw-bad); border-radius: 4px; }
+
+.tw-check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; cursor: pointer; padding: 4px; }
+.tw-check input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+
+.tw-terms { max-height: 280px; overflow-y: auto; border: 1px solid var(--tw-border); border-radius: 6px; padding: 12px 16px; background: var(--tw-bg-soft); font-size: 14px; }
+
+.tw-btn { display: inline-block; background: var(--tw-accent); color: var(--tw-accent-ink); border: 0; border-radius: 6px; padding: 12px 22px; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.tw-btn:hover { filter: brightness(.92); color: var(--tw-accent-ink); }
+.tw-btn--ghost { background: transparent; color: var(--tw-accent); border: 1px solid var(--tw-accent); }
+.tw-btn--ghost:hover { color: var(--tw-accent); background: var(--tw-bg-soft); }
+.tw-btn[disabled] { opacity: .6; cursor: wait; }
+.tw-link { background: none; border: 0; color: var(--tw-accent); text-decoration: underline; cursor: pointer; padding: 6px; font-size: 14px; }
+.is-busy { opacity: .75; }
+
+.tw-alert { padding: 12px 16px; border-radius: 6px; margin: 0 0 16px; border-left: 4px solid; }
+.tw-alert--error { background: #fdecea; border-color: var(--tw-bad); color: #7a1610; }
+.tw-alert--success { background: #e8f5ec; border-color: var(--tw-ok); color: #14532d; }
+.tw-alert--info { background: #eef4fb; border-color: #2563eb; color: #1e3a8a; }
+
+.tw-warranty-code { font-size: 28px; font-weight: 700; letter-spacing: 2px; background: var(--tw-bg-soft); border: 2px dashed var(--tw-accent); border-radius: 8px; padding: 12px; text-align: center; font-family: monospace; }
+.tw-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0; }
+.tw-dl dt { color: var(--tw-muted); }
+.tw-dl dd { margin: 0; }
+
+.tw-card { border: 1px solid var(--tw-border); border-radius: 10px; padding: 18px; margin: 0 0 18px; background: #fff; }
+.tw-card header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tw-card h4 { margin: 0; }
+.tw-card--locked { border-color: var(--tw-bad); }
+.tw-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--tw-bg-soft); white-space: nowrap; }
+.tw-badge--active { background: #e8f5ec; color: var(--tw-ok); }
+.tw-badge--locked { background: #fdecea; color: var(--tw-bad); }
+.tw-badge--expired { background: #f1f1f1; color: #444; }
+.tw-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tw-table th, .tw-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--tw-border); }
+.tw-ms--done td:last-child { color: var(--tw-ok); }
+.tw-ms--due td:last-child, .tw-ms--missed td:last-child { color: var(--tw-bad); font-weight: 600; }
+.tw-details summary { cursor: pointer; margin: 10px 0; }
+.tw-portal-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; }
+.tw-privacy-box .tw-btn { margin: 4px 6px 4px 0; }
+
+.tw-service-form { border: 2px solid var(--tw-accent); border-radius: 10px; padding: 16px; margin: 16px 0; background: #fff; }
+.tw-service-form h5 { margin: 0 0 6px; font-size: 16px; }
+.tw-service-form .tw-alert { margin: 8px 0 12px; }
+.tw-ms--submitted td:last-child { color: #1e40af; font-weight: 600; }
+.tw-ms--rejected td:last-child { color: var(--tw-bad); font-weight: 600; }
+
+.tw-app button, .tw-app input, .tw-app select, .tw-app textarea { font-family: inherit; }
+
+/* File picker (replaces the browser's "Choose file / No file chosen"). */
+.tw-file { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px; border: 1.5px dashed var(--tw-border); border-radius: 8px; background: var(--tw-bg-soft); cursor: pointer; transition: border-color .15s, background .15s; }
+.tw-file:hover, .tw-file.is-drag { border-color: var(--tw-accent); background: color-mix(in srgb, var(--tw-accent) 7%, #fff); }
+.tw-app .tw-file input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; border: 0; }
+.tw-file-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 6px; background: #fff; border: 1px solid var(--tw-border); font-weight: 600; font-size: 14px; pointer-events: none; }
+.tw-file-btn .tw-icon { width: 16px; height: 16px; }
+.tw-file-name { color: var(--tw-muted); font-size: 14px; pointer-events: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.tw-file.has-file .tw-file-name { color: inherit; font-weight: 500; }
+.tw-invalid .tw-file { border-color: var(--tw-bad); }
+
+.tw-file { gap: 16px; }
+.tw-file-btn { padding: 10px 16px; font-size: 15px; }
+.tw-file { flex-wrap: nowrap; }
+.tw-file-btn { flex: none; }
+
+/* Bot protection: honeypot is off-screen for people and screen readers; Turnstile box above the button */
+.tw-hp { position: absolute !important; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.tw-ts { margin: 4px 0 14px; min-height: 65px; }
+.tw-ts:empty { min-height: 0; margin: 0; }
+
+/* One box per digit for email codes (otp-input.js) */
+.tw-otp-source { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden; clip: rect(0 0 0 0); border: 0 !important; opacity: 0; }
+.tw-otp-boxes { display: flex; gap: 8px; margin: 6px 0 4px; }
+.tw-otp-box { width: 48px !important; height: 56px; padding: 0 !important; text-align: center; font: 600 24px/1 Geom, system-ui, sans-serif !important; border: 1.5px solid #cfd4dc; border-radius: 10px; background: #fff; color: #111827; caret-color: var(--tw-brand, #c8102e); box-sizing: border-box; }
+.tw-otp-box:focus { outline: none; border-color: var(--tw-brand, #c8102e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tw-brand, #c8102e) 18%, transparent); }
+.tw-invalid .tw-otp-box { border-color: #dc2626; }
+.tw-otp-timer { margin: 6px 0 12px; font-size: 13px; color: #4b5563; }
+.tw-otp-timer.is-low { color: #b45309; font-weight: 600; }
+.tw-otp-timer.is-expired { color: #b91c1c; font-weight: 600; }
+@media (max-width: 380px) { .tw-otp-boxes { gap: 6px; } .tw-otp-box { width: 40px !important; height: 50px; font-size: 21px !important; } }
+
+/* 1.17 – serial found (step 2) and actions after activation */
+.tw-product--found { padding: 10px 14px; border-radius: 10px; background: #ecfdf3; border: 1px solid #a6e9c1; color: #14532d; }
+.tw-product--found code { background: transparent; }
+.tw-done-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.tw-done-actions .tw-btn { margin: 0; }
+
+/* 1.17.2 – "Print warranty card": only a copy of the completion card (with the logo), on one page */
+.tw-card-logo[hidden], #tw-print-card { display: none; }
+@media print {
+    html.tw-printing-card body > *:not(#tw-print-card) { display: none !important; }
+    html.tw-printing-card, html.tw-printing-card body { background: #fff !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+    html.tw-printing-card #tw-print-card { display: block !important; width: 150mm !important; max-width: none !important; margin: 0 auto; padding: 22px 28px 18px; border: 1px solid #e3e6ea; border-radius: 14px; background: #fff; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #tw-print-card .tw-done { display: block !important; }
+    #tw-print-card .tw-card-view { border: 0 !important; padding: 0 !important; margin: 0 !important; }
+    #tw-print-card .tw-card-logo { display: block !important; text-align: center; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 3px solid var(--tw-accent); }
+    #tw-print-card .tw-card-logo-img { max-height: 60px; max-width: 60%; width: auto; height: auto; }
+    #tw-print-card .tw-card-logo-img--text { font-size: 22px; font-weight: 700; }
+    #tw-print-card h3 { margin-top: 0; }
+    @page { size: A4; margin: 15mm; }
+}
+
+/* 1.18 – "My permissions" (one marketing choice for all products) and the warranty card in the portal */
+.tw-consents { margin: 6px 0 18px; }
+.tw-consents h5 { margin: 0 0 8px; }
+.tw-consent-row { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; padding: 12px 0; border-top: 1px solid #e5e7eb; }
+.tw-consent-row:last-child { border-bottom: 1px solid #e5e7eb; }
+.tw-consent-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.tw-consent-state { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #eef0f3; color: #374151; }
+.tw-consent-state--yes { background: #dcfce7; color: #166534; }
+.tw-consent-state--no { background: #f3f4f6; color: #4b5563; }
+.tw-consent-state--mixed { background: #fef3c7; color: #92400e; }
+.tw-choice { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
+.tw-choice label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; }
+.tw-choice input { width: 18px; height: 18px; margin: 0; }
+.tw-consent-side .tw-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.tw-alert--warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; padding: 8px 10px; border-radius: 8px; margin: 8px 0 0; font-size: 14px; }
+.tw-btn--sm { padding: 6px 14px; font-size: 14px; }
+.tw-card-view { margin: 4px 0 16px; padding: 18px 20px; border: 1px solid #e3e6ea; border-radius: 12px; background: #fff; }
+.tw-card-view h3 { margin-top: 0; }
+@media (max-width: 560px) { .tw-consent-row { flex-direction: column; } .tw-consent-side { align-items: stretch; width: 100%; } }
+
+/* 1.20 – tax number with the country prefix as a dropdown on the left */
+.tw-taxid { display: flex; align-items: stretch; width: 100%; }
+.tw-taxid .tw-taxid-country { padding: 10px 6px 10px 10px; border: 1px solid var(--tw-border); border-radius: 6px; font-size: 16px; color: inherit; flex: 0 0 auto; width: 5.4em; max-width: 45%; border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; border-right: 0 !important; background-color: var(--tw-bg-soft, #f6f7f9); font-weight: 600; text-overflow: ellipsis; }
+.tw-taxid input { width: auto !important; flex: 1 1 auto; min-width: 0; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
+.tw-taxid select:focus { outline: 2px solid var(--tw-accent); outline-offset: 1px; position: relative; z-index: 1; }
+.tw-invalid .tw-taxid select { border-color: var(--tw-bad) !important; }
+
+/* 1.23.1 – the same card look on the standalone pages and inside any theme (shortcodes) */
+.tw-app.tw-register, .tw-app.tw-portal, .tw-app.tw-partners {
+    box-sizing: border-box; background: #fff; color: #1d2330; line-height: 1.55; text-align: left;
+    border: 1px solid #e3e6ea; border-radius: 14px; padding: 28px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    margin-top: 24px; margin-bottom: 32px;
+}
+.tw-app.tw-partners *, .tw-app.tw-register *, .tw-app.tw-portal *, .tw-app.tw-register *::before, .tw-app.tw-portal *::after { box-sizing: border-box; }
+.tw-app .tw-card { box-shadow: none; }
+/* Keep theme styles from leaking in: the same values the standalone pages get from the browser defaults */
+.tw-app h3, .tw-app h4, .tw-app h5 { font-family: inherit; color: inherit; letter-spacing: normal; text-transform: none; line-height: 1.3; font-weight: 700; }
+.tw-app h3 { font-size: 1.17em; margin: 0 0 .5em; }
+.tw-app h4 { font-size: 1em; margin: 1.33em 0; }
+.tw-app h5 { font-size: .83em; margin: 1.67em 0; }
+.tw-app p { margin: 1em 0; }
+.tw-app label { font-family: inherit; text-transform: none; letter-spacing: normal; }
+.tw-app fieldset { min-width: 0; }
+.tw-app legend { width: auto; border: 0; margin: 0; float: none; font-size: inherit; color: inherit; }
+.tw-app .tw-btn { text-transform: none; letter-spacing: normal; line-height: normal; text-decoration: none; box-shadow: none; }
+/* Same width as on the standalone pages, even when the theme narrows its content column (still fits small screens). */
+.tw-app.tw-register, .tw-app.tw-portal { width: 100%; max-width: 760px !important; margin-left: auto !important; margin-right: auto !important; }
+#tw-print-card.tw-app { margin: 0 auto; }
+@media (max-width: 600px) {
+    .tw-app.tw-register, .tw-app.tw-portal { padding: 18px 14px; border-radius: 10px; margin-top: 12px; }
+}
+
+/* Partner / authorized Service finder */
+.tw-app.tw-partners { width: 100%; max-width: 1100px !important; margin-left: auto !important; margin-right: auto !important; }
+/* The finder sits on the page itself: no outer card frame (only the partner cards have one). */
+.tw-app.tw-partners { border: 0 !important; box-shadow: none !important; background: transparent; padding: 0 !important; border-radius: 0; }
+.tw-partners .tw-partners-filters { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 0 0 12px; }
+.tw-partners .tw-partners-filters label { display: block; font-size: 14px; font-weight: 600; }
+.tw-partners .tw-partners-filters label[hidden] { display: none; }
+.tw-partners .tw-partners-filters span { display: block; margin-bottom: 4px; }
+.tw-partners select { width: 100%; padding: 10px 12px; border: 1px solid var(--tw-border); border-radius: 6px; font-size: 16px; background: #fff; color: inherit; }
+.tw-partners select:focus { outline: 2px solid var(--tw-accent); outline-offset: 1px; }
+.tw-partners-list { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.tw-partner { margin: 0; }
+.tw-partner h4 { margin: 0 0 8px; font-size: 17px; }
+.tw-partner-linewrap { overflow: hidden; }
+.tw-partner-line { list-style: none; margin: 0 0 0 -9px; padding: 0; display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; font-size: 15px; }
+.tw-partner-line li { margin: 0; padding: 0 8px; border-left: 1px solid var(--tw-border); white-space: nowrap; line-height: 1.4; }
+.tw-partner-line li::marker { content: none; }
+.tw-partner-line li.tw-partner-addr { white-space: normal; color: var(--tw-muted); }
+.tw-partner-line a { color: var(--tw-accent); text-decoration: none; }
+.tw-partner-line a:hover { text-decoration: underline; }
+.tw-partner-pin { display: inline-flex; vertical-align: middle; color: var(--tw-accent); line-height: 0; padding: 2px; border-radius: 6px; }
+.tw-partner-pin:hover, .tw-partner-pin:focus-visible { background: var(--tw-bg-soft); }
+.tw-partner .tw-hint { margin: 8px 0 0; }
+
+/* Warranty terms finder ([thermic_warranty_terms]) */
+.tw-app.tw-terms-finder { width: 100%; max-width: 1100px !important; margin-left: auto !important; margin-right: auto !important; display: grid; grid-template-columns: minmax(240px, 310px) 1fr; gap: 20px; align-items: start; }
+.tw-terms-finder .tw-card { margin: 0; padding: 22px 24px; border-radius: 14px; }
+.tw-terms-finder h3 { font-size: 1.2em; margin: 0 0 14px; }
+.tw-terms-field { display: block; font-weight: 700; margin: 0 0 6px; }
+.tw-terms-field > span { display: block; margin-bottom: 6px; }
+.tw-terms-finder input[type=date], .tw-terms-finder input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid var(--tw-border); border-radius: 8px; font-size: 16px; background: #fff; color: inherit; font-weight: 400; }
+.tw-terms-finder .tw-hint { font-size: 14px; margin: 8px 0 0; font-weight: 400; }
+.tw-terms-examples-title { font-size: 14px; margin: 16px 0 6px; }
+.tw-terms-examples { display: flex; flex-wrap: wrap; gap: 8px; }
+.tw-chip { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--tw-border); background: var(--tw-bg-soft); color: inherit; cursor: pointer; }
+.tw-chip:hover, .tw-chip:focus-visible { border-color: var(--tw-accent); }
+.tw-terms-serial { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--tw-border); }
+.tw-terms-serial-row { display: flex !important; gap: 8px; margin: 0 !important; }
+.tw-terms-serial-row .tw-btn { padding: 8px 14px; font-size: 15px; white-space: nowrap; }
+.tw-terms-search .tw-alert { margin: 12px 0 0; font-size: 14px; }
+.tw-terms-period { font-weight: 700; margin: -6px 0 12px; }
+.tw-terms-text { max-height: 60vh; overflow-y: auto; border: 1px solid var(--tw-border); border-radius: 8px; padding: 12px 16px; background: var(--tw-bg-soft); font-size: 15px; }
+.tw-terms-text p { margin: 0 0 .7em; }
+.tw-terms-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin: 12px 0 0; }
+.tw-terms-foot .tw-hint { margin: 0; }
+.tw-terms-foot .tw-btn { padding: 8px 16px; font-size: 15px; }
+@media (max-width: 760px) { .tw-app.tw-terms-finder { grid-template-columns: 1fr; } .tw-terms-finder .tw-card { padding: 18px 16px; } }
+
+/* Formatted terms (headings, lists, tables) wherever they are shown to customers */
+.tw-terms h2, .tw-terms-text h2 { font-size: 1.2em; margin: .9em 0 .4em; }
+.tw-terms h3, .tw-terms-text h3 { font-size: 1.07em; margin: .8em 0 .35em; }
+.tw-terms h2:first-child, .tw-terms-text h2:first-child, .tw-terms h3:first-child, .tw-terms-text h3:first-child { margin-top: 0; }
+.tw-terms ul, .tw-terms ol, .tw-terms-text ul, .tw-terms-text ol { margin: 0 0 .8em 1.4em; padding: 0; }
+.tw-terms table, .tw-terms-text table { border-collapse: collapse; margin: .6em 0 1em; max-width: 100%; display: block; overflow-x: auto; }
+.tw-terms th, .tw-terms td, .tw-terms-text th, .tw-terms-text td { border: 1px solid var(--tw-border); padding: 6px 10px; vertical-align: top; text-align: left; background: #fff; }
+.tw-terms th, .tw-terms-text th { background: #eef0f3; font-weight: 700; }
+
+/* Warranty claims in «Οι εγγυήσεις μου» */
+.tw-claims { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--tw-border); }
+.tw-claims h5 { font-size: 1em; margin: 0 0 10px; }
+.tw-claim { border: 1px solid var(--tw-border); border-left: 4px solid #2563eb; border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; background: var(--tw-bg-soft); }
+.tw-claim p { margin: 4px 0; }
+.tw-claim--approved, .tw-claim--completed { border-left-color: var(--tw-ok); }
+.tw-claim--rejected { border-left-color: var(--tw-bad); }
+.tw-claim-state { display: inline-block; margin-left: 6px; font-size: 13px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: #fff; border: 1px solid var(--tw-border); }
+.tw-claim-reply { font-size: 15px; }
+.tw-claim-form .tw-choice { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.tw-claim-form .tw-choice legend { font-weight: 600; margin-bottom: 6px; }
+.tw-claim-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--tw-border); border-radius: 6px; font: inherit; font-size: 16px; }
+
+/* [thermic_warranty_privacy]: the privacy policy text inside the theme's page. */
+.tw-privacy-text { line-height: 1.6; }
+.tw-privacy-text .tw-privacy-updated { font-size: .9em; opacity: .75; margin: 0 0 1.2em; }
+.tw-privacy-text table { width: 100%; border-collapse: collapse; margin: .6em 0 1.4em; font-size: .95em; }
+.tw-privacy-text th, .tw-privacy-text td { border: 1px solid rgba(0, 0, 0, .15); padding: 8px 10px; text-align: left; vertical-align: top; }
+.tw-privacy-text th { background: rgba(0, 0, 0, .04); font-weight: 600; }
+.tw-privacy-text ul, .tw-privacy-text ol { padding-left: 1.4em; }
+@media (max-width: 640px) { .tw-privacy-text table { display: block; overflow-x: auto; } }
+.tw-portal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tw-portal-actions a.tw-btn { text-decoration: none; }
+.tw-portal-terms-hint { margin-top: -6px; font-size: 13px; }
+
+/* «Διαγραφή των στοιχείων μου» */
+.tw-btn--danger { background: #b42318; border-color: #b42318; color: #fff; }
+.tw-btn--danger:hover:not(:disabled) { background: #912018; border-color: #912018; }
+.tw-btn:disabled { opacity: .5; cursor: not-allowed; }
+.tw-erase-card { padding: 22px 24px; }
+.tw-erase-card h3 { margin-top: 0; }
+.tw-erase-text ul { margin: 0 0 1em; padding-left: 1.3em; }
+.tw-erase-text li { margin: .35em 0; }
+.tw-erase-text p { margin: 0 0 1em; }
+.tw-erase-check { margin: 18px 0 14px; padding: 12px 14px; border: 1px solid #f2c4bf; background: #fef3f2; border-radius: 10px; font-weight: 600; }
+
+/* «Οι εγγυήσεις μου»: sign-in timer, fixed at the corner */
+.tw-session-pill { position: fixed; right: 16px; bottom: 16px; z-index: 9999; display: inline-flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 999px; background: #101828; color: #fff; font-size: 14px; box-shadow: 0 10px 30px rgba(16, 24, 40, .3); font-variant-numeric: tabular-nums; }
+.tw-session-pill[hidden] { display: none; }
+.tw-session-pill strong { font-weight: 700; }
+.tw-session-pill button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .15); color: #fff; font-size: 17px; line-height: 1; cursor: pointer; }
+.tw-session-pill button:hover { background: rgba(255, 255, 255, .28); }
+.tw-session-pill button.is-spinning { animation: tw-spin .6s linear; }
+.tw-session-pill.is-low { background: #b42318; }
+@keyframes tw-spin { to { transform: rotate(360deg); } }
+@media print { .tw-session-pill { display: none !important; } }
+.tw-portal-new { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 18px; }
+.tw-portal-new a.tw-btn { text-decoration: none; }
